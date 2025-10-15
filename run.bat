@@ -1,0 +1,1 @@
+node  --experimental-strip-types --watch-path=./src  ./src/index.ts

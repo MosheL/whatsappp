@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  whatsapp-app:
+    build:
+      context: /mnt/samsung_sda/smb-truenas/docker/whatsapp
+    ports:
+      - "3001:3000"  # חיצוני:פנימי
+    restart: unless-stopped
+    volumes:
+      - /mnt/samsung_sda/smb-truenas/docker/whatsapp:/app
