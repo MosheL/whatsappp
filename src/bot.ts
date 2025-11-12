@@ -39,6 +39,9 @@ async function transcribeBuffer(buffer: Buffer): Promise<string> {
   }
 }
 
+const transcriptionCache = new Map<string, string>();
+const CACHE_LIMIT = 100; // Limit the cache size
+
 export async function createBot(authFolder: string, label: string) {
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   const { version } = await fetchLatestBaileysVersion();
@@ -79,39 +82,77 @@ export async function createBot(authFolder: string, label: string) {
 
     sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('messages.upsert', async ({ messages }) => {
-      const msg = messages[0];
-      if (!msg.message || msg.key.fromMe) return;
-
+    // Dedicated function to handle audio message transcription
+    async function handleAudioTranscription(msg: any) {
+      if (!msg.message) return;
       const messageType = Object.keys(msg.message)[0];
-
       const remoteJid = msg.key.remoteJid!;
-       if (remoteJid.endsWith('@g.us')) {
-            const groupMeta = await sock.groupMetadata(remoteJid);
-            const me = groupMeta.participants.find(p => p.id === sock.user?.lid!.split(":")[0]+"@lid");
 
-            if (!me) return console.log(`${label} 🚫 איני חבר בקבוצה ${remoteJid}`);
-            if (groupMeta.announce && me.admin !== 'admin') {
-              return console.log(`${label} 🔒 ${groupMeta.subject} נעולה לאדמינים`);
-            }
-          }
+      if (remoteJid.endsWith('@g.us')) {
+        const groupMeta = await sock.groupMetadata(remoteJid);
+        const me = groupMeta.participants.find(p => p.id === sock.user?.lid!.split(":")[0]+"@lid");
+
+        if (!me) {
+          console.log(`${label} 🚫 איני חבר בקבוצה ${remoteJid}`);
+          return;
+        }
+        if (groupMeta.announce && me.admin !== 'admin') {
+          console.log(`${label} 🔒 ${groupMeta.subject} נעולה לאדמינים`);
+          return;
+        }
+      }
 
       if (messageType === 'audioMessage') {
-        console.log(`${label} 📥 קולית נכנסה!`);
+        const messageHash = msg.key.id;
+        
+        console.log(`${label} 📥 קולית נכנסה! ` + messageHash);
+
+        // Generate hash for the audio message
+        
+
+        // Check if the message has already been transcribed
+        if (transcriptionCache.has(messageHash)) {
+          console.log(`${label} 📝 תמלול כבר קיים במטמון.`);
+          return;
+        }
 
         try {
-          const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: sock.logger! });
+          // Show 'מתמלל...' message
+          const sentMsg = await sock.sendMessage(remoteJid, { text: '📝 מתמלל...' }, { quoted: msg });
+
+          // Fix for required reuploadRequest in logger context
+          const buffer = await downloadMediaMessage(
+            msg,'buffer', {},
+            {
+              logger: sock.logger!,
+              reuploadRequest: sock.relayMessage.bind(sock, remoteJid)
+            }
+          );
           const transcript = await transcribeBuffer(buffer);
           console.log(`${label} 📝 תמלול:`, transcript);
 
-          if (transcript) {
-            await sock.sendMessage(remoteJid, {
-              text: `📝 תמלול:\n${transcript}`,
-            },{ quoted: msg});
+          // Add the message hash to the cache
+          transcriptionCache.set(messageHash, transcript);
+
+          // Ensure the cache does not exceed the limit
+          if (transcriptionCache.size > CACHE_LIMIT) {
+            const oldestKey = transcriptionCache.keys().next().value;
+            transcriptionCache.delete(oldestKey);
           }
+
+          await sock.sendMessage(remoteJid, {
+              edit: sentMsg.key,
+              text: transcript? `📝 תמלול:\n${transcript}` : '❌ לא הצלחתי לתמלל.'
+            });
         } catch (err: any) {
           console.error(`${label} ❌ שגיאה:`, err.message);
         }
+      }
+    }
+
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+      for (const msg of messages) {
+        await handleAudioTranscription(msg);
       }
     });
   }
