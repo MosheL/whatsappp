@@ -1,5 +1,5 @@
-import {makeWASocket, fetchLatestBaileysVersion, downloadMediaMessage,isJidGroup} from '@whiskeysockets/baileys'
-import { useRedisAuthStateWithHSet } from 'baileys-redis-auth'
+import {makeWASocket, fetchLatestBaileysVersion,DisconnectReason, downloadMediaMessage,isJidGroup} from '@whiskeysockets/baileys'
+import { useRedisAuthStateWithHSet,deleteKeysWithPattern } from 'baileys-redis-auth'
 
 import fs from 'fs'
 import path from 'path'
@@ -51,7 +51,7 @@ const transcriptionCache = new Map<string, string>()
 const CACHE_LIMIT = 100
 
 export async function createBot(authFolder: string, label: string) {
-  const { state, saveCreds, redis: authRedisInstance } =
+  const { state, saveCreds, redis } =
   await useRedisAuthStateWithHSet(redisOptions, authFolder, console.log)
   const { version } = await fetchLatestBaileysVersion()
 
@@ -66,14 +66,14 @@ export async function createBot(authFolder: string, label: string) {
       return await wrapper.sock.sendMessage(jid, { text })
     }
   }
-
+var currentWait = 0;
   async function startSock() {
     const sock = makeWASocket({
       version,
       auth: state,
       shouldIgnoreJid: jid => jid === 'status@broadcast',
       //shouldIgnoreJidMissingInDeviceList: true,
-      syncFullHistory: true // עוזר לסנכרון מפתחות בלי לשמור הודעות
+      syncFullHistory: false // עוזר לסנכרון מפתחות בלי לשמור הודעות
       // בלי msgRetryCounterCache, בלי getMessage, בלי store
     })
 
@@ -88,8 +88,23 @@ export async function createBot(authFolder: string, label: string) {
       if (connection === 'open') console.log(`${label} ✅ התחברת בהצלחה ל־WhatsApp`)
       if (connection === 'close') {
         console.log(`${label} ❌ החיבור נסגר:`, lastDisconnect?.error)
-        setTimeout(startSock, 5000)
+       const err = lastDisconnect?.error;
+      const status = err?.output?.statusCode || err?.status || err?.code || 'unknown';
+
+        const shouldLogout =   status === DisconnectReason.loggedOut ||
+        /logged.?out|401|logout/i.test(String(status)) ||
+        /invalid session|bad session|multi.*auth/i.test(String(err));
+
+      // ✅ ניקוי "חיבור ישן" כדי שלא ימשיך לנסות לשלוח דברים
+      try { sock?.end?.(); } catch {}
+      try { inst?.client?.end?.(); } catch {}
+        
+      if (shouldLogout)
+         deleteKeysWithPattern({redis, pattern: `${authFolder}:*`, logger: console.log})
+        clearTimeout(currentWait);
+        currentWait = setTimeout(startSock, 5000)
       }
+      
     })
 
     sock.ev.on('creds.update', saveCreds)
@@ -99,10 +114,10 @@ export async function createBot(authFolder: string, label: string) {
       const type = Object.keys(msg.message)[0]
       if (type !== 'audioMessage') return
 
-      const remoteJid = msg.key.remoteJid!
+      const remoteJid = msg.key.remoteJidAlt || msg.key.remoteJid!
       const fromGroup = isJidGroup(remoteJid)
       const id = msg.key.id
-      console.log(`${label} 📥 קולית נכנסה! ${id}`)
+      console.log(`${label} 📥 קולית נכנסה! ${id} מ ` + remoteJid)
 
       if (transcriptionCache.has(id)) {
         console.log(`${label} 📝 תמלול כבר קיים במטמון.`)
