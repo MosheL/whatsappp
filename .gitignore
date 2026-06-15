@@ -1,0 +1,15 @@
+auth/*
+auth2/*
+node_modules
+dist/
+server.*.log
+vite.*.log
+.env
+.env.*
+!.env.example
+!.env.e2e.example
+*.local.bat
+*.bat
+DEPLOY.md
+nul
+.npm-cache

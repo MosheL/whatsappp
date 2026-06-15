@@ -1,0 +1,20 @@
+{
+  "name": "WhatsApp UI",
+  "short_name": "WhatsApp",
+  "description": "Fast RTL WhatsApp chat client",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "dir": "rtl",
+  "lang": "he",
+  "background_color": "#f7f9fa",
+  "theme_color": "#166a5b",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
