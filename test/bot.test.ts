@@ -109,6 +109,27 @@ test('normalizes www links only for preview fetching', () => {
   })
 })
 
+test('deduplicates LID and phone contacts in the UI contact list', () => {
+  const lid = '123456789012345@lid'
+  const phone = '972501234567@s.whatsapp.net'
+  const contact = { id: lid, name: 'Alice', phoneNumber: phone }
+  const fakeBot: any = {
+    contacts: new Map([
+      [lid, contact],
+      [phone, contact]
+    ]),
+    lidToPhone: new Map([[lid, phone]]),
+    chats: new Map(),
+    contactCache: {
+      phoneForJid: (jid: string, item: any) => item?.phoneNumber || (jid.endsWith('@s.whatsapp.net') ? jid : '')
+    }
+  }
+
+  assert.deepEqual(Bot.prototype.listContacts.call(fakeBot), [
+    { jid: phone, name: 'Alice', phoneNumber: phone }
+  ])
+})
+
 test('reuses link preview cache entries by URL across different message text', async () => {
   const preview = Promise.resolve({ title: 'Cached preview' })
   const fakeBot: any = {

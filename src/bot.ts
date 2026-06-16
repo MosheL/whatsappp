@@ -306,25 +306,23 @@ export class Bot {
   listContacts(): Array<{ jid: string; name: string; phoneNumber: string }> {
     const seen = new Set<string>()
     const result: Array<{ jid: string; name: string; phoneNumber: string }> = []
+    const remember = (jid: string, name: string, phoneNumber = '') => {
+      if (!jid || !name) return
+      const canonicalJid = phoneNumber || this.lidToPhone.get(jid) || (!isLidJid(jid) ? normalizePhoneJid(jid) : jid)
+      const keys = [jid, canonicalJid, phoneNumber].filter(Boolean)
+      if (keys.some(key => seen.has(key))) return
+      keys.forEach(key => seen.add(key))
+      result.push({ jid: canonicalJid, name, phoneNumber })
+    }
     for (const [jid, contact] of this.contacts) {
       const name = contactName(contact)
-      if (!name || seen.has(jid)) continue
-      seen.add(jid)
-      result.push({
-        jid,
-        name,
-        phoneNumber: contact.phoneNumber || ''
-      })
+      const phoneNumber = this.contactCache.phoneForJid(jid, contact)
+      remember(jid, name, phoneNumber)
     }
     // Also add contacts from lidToPhone that have a chat but no contact entry
     for (const [lid, phone] of this.lidToPhone) {
-      if (seen.has(lid) || seen.has(phone)) continue
       const chat = this.chats.get(phone)
-      if (chat && chat.name && !seen.has(phone)) {
-        seen.add(phone)
-        seen.add(lid)
-        result.push({ jid: phone, name: chat.name, phoneNumber: phone })
-      }
+      if (chat?.name) remember(lid, chat.name, phone)
     }
     return result.sort((a, b) => a.name.localeCompare(b.name))
   }

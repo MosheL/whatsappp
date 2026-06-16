@@ -122,55 +122,69 @@ const orderedChats = computed(() => [...chats.value].sort((a, b) => {
   return (b.timestamp || 0) - (a.timestamp || 0)
 }))
 const filteredChats = computed(() => {
-  const term = search.value.trim().toLowerCase()
+  const term = searchable(search.value).trim()
   let list = orderedChats.value.filter(chat => Boolean(chat.isArchived) === showArchived.value)
   if (!term) return list
   const phoneTerms = phoneSearchTerms(term)
   list = list.filter(chat =>
-    chat.name.toLowerCase().includes(term) ||
-    chat.jid.toLowerCase().includes(term) ||
-    (chat.displayJid || '').toLowerCase().includes(term) ||
-    (chat.phoneNumber || '').toLowerCase().includes(term) ||
-    chat.lastMessage.toLowerCase().includes(term) ||
+    searchable(chat.name).includes(term) ||
+    searchable(chat.jid).includes(term) ||
+    searchable(chat.displayJid).includes(term) ||
+    searchable(chat.phoneNumber).includes(term) ||
+    searchable(chat.lastMessage).includes(term) ||
     phoneTerms.some(phoneTerm => chatPhoneValues(chat).some(value => value.includes(phoneTerm)))
   )
   // Also search through contacts that don't have a chat yet
-  const existingJids = new Set(chats.value.map(c => c.jid))
-  const matchedContacts = contacts.value
-    .filter(c => !existingJids.has(c.jid))
-    .filter(c =>
-      c.name.toLowerCase().includes(term) ||
-      c.jid.toLowerCase().includes(term) ||
-      (c.phoneNumber || '').toLowerCase().includes(term) ||
-      phoneTerms.some(phoneTerm => [c.phoneNumber, c.jid].filter(Boolean).some(v => v.includes(phoneTerm)))
-    )
-    .map(c => ({
-      jid: c.jid,
-      displayJid: c.phoneNumber.replace(/@.*$/, ''),
-      phoneNumber: c.phoneNumber,
-      name: c.name,
+  const seenIdentities = new Set(chats.value.flatMap(item => identityKeys(item)))
+  const matchedContacts = []
+  for (const contact of contacts.value) {
+    const keys = identityKeys(contact)
+    if (keys.some(key => seenIdentities.has(key))) continue
+    if (
+      !searchable(contact?.name).includes(term) &&
+      !searchable(contact?.jid).includes(term) &&
+      !searchable(contact?.phoneNumber).includes(term) &&
+      !phoneTerms.some(phoneTerm => [contact?.phoneNumber, contact?.jid].filter(Boolean).some(value => safeText(value).includes(phoneTerm)))
+    ) continue
+    keys.forEach(key => seenIdentities.add(key))
+    const jid = contact?.phoneNumber || contact?.jid || ''
+    const displayJid = safeText(contact?.phoneNumber || contact?.jid).replace(/@.*$/, '')
+    matchedContacts.push({
+      jid,
+      displayJid,
+      phoneNumber: contact?.phoneNumber || '',
+      name: contact?.name || displayJid || jid,
       lastMessage: '',
       timestamp: 0,
       unread: 0,
       isGroup: false,
       isMuted: false,
       isArchived: false
-    }))
+    })
+  }
   return [...list, ...matchedContacts]
 })
 const mentionSuggestions = computed(() => {
   if (mentionQuery.value === null || !currentChat.value?.isGroup) return []
-  const query = mentionQuery.value.toLowerCase()
+  const query = searchable(mentionQuery.value)
   return groupParticipants.value
     .filter(participant => participantMentionToken(participant))
     .filter(participant => !query
-      || participant.name.toLowerCase().includes(query)
-      || participant.phoneNumber.includes(query))
+      || searchable(participant.name).includes(query)
+      || safeText(participant.phoneNumber).includes(query))
     .slice(0, 8)
 })
 
+function safeText(value) {
+  return String(value ?? '')
+}
+
+function searchable(value) {
+  return safeText(value).toLowerCase()
+}
+
 function phoneSearchTerms(value) {
-  const digits = value.replace(/[^\d]/g, '')
+  const digits = safeText(value).replace(/[^\d]/g, '')
   if (!digits) return []
   const terms = new Set([digits])
   if (digits.startsWith('0')) terms.add(`972${digits.slice(1)}`)
@@ -182,6 +196,17 @@ function chatPhoneValues(chat) {
   return [chat.phoneNumber, chat.displayJid, chat.jid]
     .filter(Boolean)
     .flatMap(value => phoneSearchTerms(String(value)))
+}
+
+function identityKeys(item) {
+  const keys = new Set()
+  for (const value of [item?.jid, item?.phoneNumber, item?.displayJid]) {
+    const text = searchable(value)
+    if (!text) continue
+    keys.add(text)
+    for (const phoneTerm of phoneSearchTerms(text)) keys.add(`phone:${phoneTerm}`)
+  }
+  return [...keys]
 }
 
 function chatAddress(chat) {
@@ -851,14 +876,14 @@ function selectForwardTarget(jid) {
 }
 
 const forwardableChats = computed(() => {
-  const term = forwardSearch.value.trim().toLowerCase()
+  const term = searchable(forwardSearch.value).trim()
   const list = orderedChats.value.filter(chat => chat.jid !== selectedChat.value)
   if (!term) return list.slice(0, 50)
   return list.filter(chat =>
-    chat.name.toLowerCase().includes(term) ||
-    chat.jid.toLowerCase().includes(term) ||
-    (chat.displayJid || '').toLowerCase().includes(term) ||
-    (chat.phoneNumber || '').toLowerCase().includes(term)
+    searchable(chat.name).includes(term) ||
+    searchable(chat.jid).includes(term) ||
+    searchable(chat.displayJid).includes(term) ||
+    searchable(chat.phoneNumber).includes(term)
   ).slice(0, 50)
 })
 
