@@ -361,7 +361,10 @@ button {
   contain-intrinsic-size: 72px;
 }
 
-.chat-item:hover,
+.chat-item:hover {
+  background: #f0f5f3;
+}
+
 .chat-item.active {
   background: #e9f3f0;
 }
