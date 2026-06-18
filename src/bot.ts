@@ -100,7 +100,7 @@ function publicLinkPreview(preview: Awaited<ReturnType<typeof getUrlInfo>>): Lin
 async function transcribeBuffer(buffer: Buffer): Promise<string> {
   try {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 30000)
+    const timeout = setTimeout(() => controller.abort(), parseInt(process.env.TRANSCRIBE_TIMEOUT_MS, 10) || 300000)
     try {
       const res = await fetch(
         'http://' + process.env.REDIS_HOST + ':8000/transcribe',
