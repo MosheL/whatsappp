@@ -1069,7 +1069,15 @@ export class Bot {
     const type = messageType(msg.message)
     const text = messageText(msg.message)
     const media = messageMedia(msg.message, type)
-    const contact = messageContact(msg.message, type)
+    let contact = messageContact(msg.message, type)
+    // Enrich contact displayName from our contacts list when missing
+    if (contact && !fromMe && !contact.displayName) {
+      const senderJid = msg.key.participant || msg.key.remoteJidAlt || msg.key.remoteJid || ''
+      const senderName = this.contactCache.senderDisplayName(msg.key, '')
+      if (senderName) {
+        contact = { ...contact, displayName: senderName }
+      }
+    }
     const linkPreview = messageLinkPreview(msg.message)
     const viewOnce = isViewOnceBaileysMessage(msg)
     const viewOnceType = media?.kind || viewOnceKindFromType(type)

@@ -187,6 +187,12 @@ function searchable(value) {
   return safeText(value).toLowerCase()
 }
 
+/** Strip @s.whatsapp.net / @lid suffix and return clean digits */
+function cleanPhone(value) {
+  const raw = String(value || '').replace(/@.*$/, '')
+  return raw.replace(/[^\d]/g, '')
+}
+
 function phoneSearchTerms(value) {
   const digits = safeText(value).replace(/[^\d]/g, '')
   if (!digits) return []
@@ -883,10 +889,13 @@ const filteredContacts = computed(() => {
   const term = searchable(contactSearch.value).trim()
   let list = contacts.value.filter(c => c.phoneNumber && c.name)
   if (!term) return list.slice(0, 100)
-  return list.filter(c =>
-    searchable(c.name).includes(term) ||
-    searchable(c.phoneNumber).includes(term)
-  ).slice(0, 100)
+  return list.filter(c => {
+    const nameMatch = searchable(c.name).includes(term)
+    // Search phone by clean digits (strips @s.whatsapp.net suffix)
+    const phoneClean = cleanPhone(c.phoneNumber)
+    const phoneMatch = phoneClean.includes(term) || term.includes(phoneClean)
+    return nameMatch || phoneMatch
+  }).slice(0, 100)
 })
 
 async function forwardMessage(sourceJid, sourceId, targetJid) {
@@ -1694,7 +1703,7 @@ onUnmounted(() => {
                   <span class="avatar">{{ initials(contact) }}</span>
                 </span>
                 <span class="contact-item-name">{{ contact.name }}</span>
-                <small class="contact-item-phone">{{ contact.phoneNumber || '' }}</small>
+                <small class="contact-item-phone">{{ cleanPhone(contact.phoneNumber) || '' }}</small>
               </button>
               <p v-if="!filteredContacts.length" class="empty-list">אין אנשי קשר זמינים</p>
             </div>

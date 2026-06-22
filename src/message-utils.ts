@@ -17,12 +17,26 @@ export function messageStatusRank(status: number | string | undefined | null): n
 }
 
 /**
- * Merge a patch into a message, handling status ranking, user receipts, and reactions.
+ * Merge a patch into a message, handling status ranking, user receipts, reactions,
+ * and contact fields (don't overwrite existing contact data with empty values).
  */
 export function mergeMessagePatch(message: UiMessage, patch: Partial<UiMessage>): UiMessage {
   const next = { ...message, ...patch }
   if ('status' in patch && messageStatusRank(message.status) > messageStatusRank(patch.status)) {
     next.status = message.status
+  }
+  // Preserve existing contact data — don't let an echo with empty displayName wipe it out
+  if (patch.contact && message.contact) {
+    const p = patch.contact as Record<string, unknown>
+    if (!p.displayName && !message.contact.displayName) {
+      delete next.contact
+    } else if (p.displayName === '' || p.displayName == null) {
+      // Patch has no displayName — keep the existing one
+      ;(next.contact as any).displayName = message.contact.displayName
+    }
+    if ((p.phone === '' || p.phone == null) && message.contact.phone) {
+      ;(next.contact as any).phone = message.contact.phone
+    }
   }
   if (message.userReceipt || patch.userReceipt) {
     const receipts = [...(Array.isArray(message.userReceipt) ? message.userReceipt : [])]

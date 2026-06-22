@@ -175,6 +175,34 @@ export function messageMedia(message: WAMessageContent | null | undefined, type:
   return undefined
 }
 
+/** Extract display name from a vCard string (FN field) */
+export function displayNameFromVcard(vcard?: string | null): string {
+  if (!vcard) return ''
+  const lines = vcard.split(/[\r\n]+/)
+  // Try to find FN line (display name in vCard)
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (/^FN/i.test(trimmed)) {
+      const value = trimmed.split(':')[1]?.trim() || ''
+      if (value) return value
+    }
+  }
+  // Fallback: try N field (structured name)
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (/^N/i.test(trimmed)) {
+      const parts = trimmed.split(':')[1]?.split(';').filter(Boolean) || []
+      // N format: Family;Given;Additional;Prefix;Suffix
+      const given = parts[1] || ''
+      const family = parts[0] || ''
+      if (given && family) return `${family} ${given}`.trim()
+      if (given) return given
+      if (family) return family
+    }
+  }
+  return ''
+}
+
 /** Extract phone number from a vCard string */
 export function phoneFromVcard(vcard?: string | null): string {
   if (!vcard) return ''
@@ -193,13 +221,36 @@ export function phoneFromVcard(vcard?: string | null): string {
 
 export function messageContact(message: WAMessageContent | null | undefined, type: string): ContactData | undefined {
   const content = getMessageContent(message)
-  if (type === 'contactMessage') {
-    const contact = content?.contactMessage
-    if (!contact?.displayName) return undefined
+
+  // Handle single contact (contactMessage) — also check contactsArrayMessage with 1 item
+  if (type === 'contactMessage' || (type === 'contactsArrayMessage' && content?.contactsArrayMessage?.contacts?.length === 1)) {
+    let displayName = ''
+    let vcard: string | undefined
+    // Try contactMessage first, then fall back to contactsArrayMessage with single item
+    const directContact = content?.contactMessage
+    if (directContact) {
+      displayName = directContact.displayName || ''
+      vcard = directContact.vcard || undefined
+    }
+    // If no direct contact data, try extracting from contactsArrayMessage (WhatsApp may echo as this)
+    if (!displayName && !vcard) {
+      const arrContacts = content?.contactsArrayMessage?.contacts
+      if (arrContacts?.length === 1) {
+        const single = arrContacts[0]
+        displayName = single.displayName || ''
+        vcard = single.vcard || undefined
+      }
+    }
+    // Extract from vCard FN field as last resort
+    if (!displayName) {
+      displayName = displayNameFromVcard(vcard)
+    }
+    // Return undefined only if we have absolutely nothing to show
+    if (!displayName && !vcard) return undefined
     return {
-      displayName: contact.displayName,
-      vcard: contact.vcard || undefined,
-      phone: phoneFromVcard(contact.vcard) || undefined
+      displayName,
+      vcard,
+      phone: phoneFromVcard(vcard) || undefined
     }
   }
   if (type === 'contactsArrayMessage') {

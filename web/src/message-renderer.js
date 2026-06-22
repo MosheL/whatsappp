@@ -126,10 +126,26 @@ export function isContactMessage(message) {
 }
 
 /**
+ * Extract display name from vCard FN field (client-side fallback).
+ */
+function displayNameFromVcard(vcard) {
+  if (!vcard) return ''
+  const lines = String(vcard).split(/[\r\n]+/)
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (/^FN/i.test(trimmed)) {
+      const value = trimmed.split(':')[1]?.trim() || ''
+      if (value) return value
+    }
+  }
+  return ''
+}
+
+/**
  * Get the display name for a contact message.
  */
 export function contactDisplayName(message) {
-  return message?.contact?.displayName || message?.text || ''
+  return message?.contact?.displayName || displayNameFromVcard(message?.contact?.vcard) || message?.text || 'איש קשר'
 }
 
 /**
