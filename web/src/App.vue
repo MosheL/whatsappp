@@ -39,6 +39,10 @@ const draggingFile = ref(false)
 const chatDropJid = ref('')
 const showUploadModal = ref(false)
 const showForwardPopup = ref(false)
+const showContactPicker = ref(false)
+const selectedContactForSend = ref(null)
+const contactSearch = ref('')
+const showComposerMenu = ref(false)
 const forwardMessageId = ref('')
 const forwardSourceJid = ref('')
 const forwardTargetJid = ref('')
@@ -830,6 +834,58 @@ function toggleMessageMenu(message) {
   reactionMessageId.value = ''
 }
 
+async function sendContact() {
+  if (!selectedChat.value || !selectedContactForSend.value) return
+  actionMessageId.value = ''
+  showContactPicker.value = false
+  error.value = ''
+  try {
+    const contact = selectedContactForSend.value
+    const vcard = makeVcard(contact)
+    if (!vcard) { error.value = 'איש קשר חייב שם ומספר טלפון'; return }
+    const data = await api('/api/send-contact', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bot: selectedBot.value, jid: activeSendJid(), displayName: contact.name, vcard })
+    })
+    if (data.message && selectedChat.value === activeSendJid()) {
+      upsertMessage(data.message)
+      scrollToBottom()
+    }
+  } catch (err) {
+    error.value = err.message
+  }
+}
+
+function openContactPicker() {
+  showContactPicker.value = true
+  contactSearch.value = ''
+  selectedContactForSend.value = null
+  actionMessageId.value = ''
+}
+
+function closeContactPicker() {
+  showContactPicker.value = false
+  selectedContactForSend.value = null
+}
+
+// Generate vCard for a contact client-side
+function makeVcard(contact) {
+  const phone = (contact.phoneNumber || '').replace(/[^\d]/g, '')
+  if (!phone || !contact.name) return ''
+  return `BEGIN:VCARD\nVERSION:3.0\nFN:${contact.name}\nTEL;TYPE=CELL:+${phone}\nEND:VCARD`
+}
+
+const filteredContacts = computed(() => {
+  const term = searchable(contactSearch.value).trim()
+  let list = contacts.value.filter(c => c.phoneNumber && c.name)
+  if (!term) return list.slice(0, 100)
+  return list.filter(c =>
+    searchable(c.name).includes(term) ||
+    searchable(c.phoneNumber).includes(term)
+  ).slice(0, 100)
+})
+
 async function forwardMessage(sourceJid, sourceId, targetJid) {
   if (!sourceJid || !sourceId || !targetJid) return
   actionMessageId.value = ''
@@ -1491,12 +1547,13 @@ onUnmounted(() => {
           <button type="button" title="בטל תגובה" @click="cancelReply">×</button>
         </div>
         <form class="text-form" @submit.prevent="sendText">
-          <button class="attach-side-button" type="button" :disabled="!selectedChat" title="צרף קובץ" @click="openUploadPicker">
-            +
-          </button>
-          <button class="emoji-button" type="button" :disabled="!selectedChat" title="אימוג׳י" @click.stop="toggleEmojiPanel">
-            ☺
-          </button>
+          <div class="composer-actions">
+            <button class="action-button" type="button" :disabled="!selectedChat" title="צרף קובץ" @click="openUploadPicker">📎</button>
+            <button class="action-button" type="button" :disabled="!selectedChat" title="שלח איש קשר" @click="openContactPicker">👤</button>
+            <button class="action-button emoji-action" type="button" :disabled="!selectedChat" title="אימוג׳י" @click.stop="toggleEmojiPanel">
+              ☺
+            </button>
+          </div>
           <input ref="fileInputRef" class="hidden-file-input" type="file" @change="onFile" />
           <textarea
             ref="textAreaRef"
@@ -1600,6 +1657,49 @@ onUnmounted(() => {
               <p v-if="!forwardableChats.length" class="empty-list">אין שיחות להצגה</p>
             </div>
           </div>
+        </section>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <Teleport to="body">
+    <Transition name="modal">
+      <div
+        v-if="showContactPicker"
+        class="modal-mask contact-modal-mask"
+        role="dialog"
+        aria-modal="true"
+        @mousedown.self="closeContactPicker"
+      >
+        <section class="modal-wrapper contact-window" @mousedown.stop @keydown.enter.exact.prevent="sendContact">
+          <header class="modal-header">
+            <strong>שלח איש קשר</strong>
+            <button type="button" class="modal-close" title="סגור" @click="closeContactPicker">×</button>
+          </header>
+          <div class="modal-body contact-list">
+            <input v-model="contactSearch" class="contact-search" placeholder="חיפוש איש קשר" />
+            <div class="contact-items">
+              <button
+                v-for="contact in filteredContacts"
+                :key="contact.jid"
+                class="contact-item"
+                type="button"
+                :class="{ selected: selectedContactForSend?.jid === contact.jid }"
+                @click="selectedContactForSend = contact"
+              >
+                <span class="contact-item-avatar">
+                  <span class="avatar">{{ initials(contact) }}</span>
+                </span>
+                <span class="contact-item-name">{{ contact.name }}</span>
+                <small class="contact-item-phone">{{ contact.phoneNumber || '' }}</small>
+              </button>
+              <p v-if="!filteredContacts.length" class="empty-list">אין אנשי קשר זמינים</p>
+            </div>
+          </div>
+          <footer class="modal-footer">
+            <button type="button" class="light-button" @click="closeContactPicker">ביטול</button>
+            <button type="submit" :disabled="!selectedContactForSend || busy" @click="sendContact">שלח איש קשר</button>
+          </footer>
         </section>
       </div>
     </Transition>

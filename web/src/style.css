@@ -1443,10 +1443,33 @@ button {
   display: grid;
   gap: 8px;
   position: relative;
+  grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
-.text-form {
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
+.composer-actions {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.action-button {
+  background: transparent;
+  border: 0;
+  color: #53636b;
+  font-size: 18px;
+  min-width: 34px;
+  padding: 4px 6px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.action-button:hover:not(:disabled) {
+  background: #e9f3f0;
+}
+
+.action-button:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .mention-suggestions {
@@ -1498,12 +1521,7 @@ button {
   padding: 0 10px;
 }
 
-.attach-side-button {
-  min-width: 42px;
-  padding: 0;
-}
-
-.emoji-button {
+.emoji-action {
   anchor-name: --emoji-button;
   min-width: 42px;
   padding: 0;
@@ -1557,6 +1575,107 @@ button {
   background: #dfe6ea !important;
   color: #26333b !important;
   padding-inline: 10px !important;
+}
+
+/* Contact picker modal */
+.contact-modal-mask {
+  z-index: 10000;
+}
+
+.contact-window {
+  max-height: min(92vh, 500px);
+  width: min(94vw, 380px);
+}
+
+.contact-list {
+  padding: 0;
+}
+
+.contact-search {
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid #d8dee4;
+  font-size: 14px;
+  outline: none;
+}
+
+.contact-search:focus {
+  border-bottom-color: #0b8fdc;
+}
+
+.contact-items {
+  max-height: 360px;
+  overflow: auto;
+}
+
+.contact-item {
+  align-items: center;
+  background: #ffffff;
+  border: 0;
+  border-bottom: 1px solid #edf0f2;
+  color: #1f2933;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  min-height: 52px;
+  padding: 8px 12px;
+  text-align: right;
+  width: 100%;
+}
+
+.contact-item:hover {
+  background: #e9f3f0;
+}
+
+.contact-item.selected {
+  background: #d9fdd3;
+  border-right: 3px solid #128c7e;
+}
+
+.contact-item-avatar {
+  height: 36px;
+  width: 36px;
+  flex: none;
+}
+
+.contact-item-avatar .avatar {
+  height: 36px;
+  width: 36px;
+}
+
+.contact-item-name {
+  font-weight: 600;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contact-item-phone {
+  color: #66727b;
+  font-size: 11px;
+  direction: ltr;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 12px 14px;
+  border-top: 1px solid #d8dee4;
+}
+
+.modal-footer button {
+  background: #166a5b;
+  border: 0;
+  border-radius: 6px;
+  color: #ffffff;
+  min-height: 38px;
+  padding: 0 16px;
 }
 
 /* Forward popup */

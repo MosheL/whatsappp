@@ -48,7 +48,8 @@ import {
   callInfoFromMessage,
   messagePatchFromContent,
   isTransportMessage,
-  messageInteractiveData
+  messageInteractiveData,
+  phoneFromVcard
 } from './message-processor.ts'
 import { MessageStore } from './message-store.ts'
 import { mergeMessagePatch } from './message-utils.ts'
@@ -303,16 +304,22 @@ export class Bot {
       .sort((a, b) => b.timestamp - a.timestamp)
   }
 
-  listContacts(): Array<{ jid: string; name: string; phoneNumber: string }> {
+  listContacts(): Array<{ jid: string; name: string; phoneNumber: string; vcard?: string }> {
     const seen = new Set<string>()
-    const result: Array<{ jid: string; name: string; phoneNumber: string }> = []
+    const result: Array<{ jid: string; name: string; phoneNumber: string; vcard?: string }> = []
     const remember = (jid: string, name: string, phoneNumber = '') => {
       if (!jid || !name) return
       const canonicalJid = phoneNumber || this.lidToPhone.get(jid) || (!isLidJid(jid) ? normalizePhoneJid(jid) : jid)
       const keys = [jid, canonicalJid, phoneNumber].filter(Boolean)
       if (keys.some(key => seen.has(key))) return
       keys.forEach(key => seen.add(key))
-      result.push({ jid: canonicalJid, name, phoneNumber })
+      // Generate a vCard for sending
+      let vcard = ''
+      if (phoneNumber && name) {
+        const cleanPhone = phoneNumber.replace(/[^\d]/g, '')
+        vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${name}\nTEL;TYPE=CELL:+${cleanPhone}\nEND:VCARD`
+      }
+      result.push({ jid: canonicalJid, name, phoneNumber, vcard })
     }
     for (const [jid, contact] of this.contacts) {
       const name = contactName(contact)
@@ -841,6 +848,35 @@ export class Bot {
       timestamp: now
     })
     return result
+  }
+
+  async sendContact(jid: string, displayName: string, vcard: string) {
+    if (!this.sock) throw new Error('Socket not connected')
+    jid = this.contactCache.resolveOutgoingJid(jid)
+    const sent = await this.sock.sendMessage(jid, {
+      contacts: {
+        displayName,
+        contact: [{ vcard }]
+      }
+    })
+    const now = Date.now()
+    const resultContact = {
+      displayName,
+      phone: phoneFromVcard(vcard)
+    }
+    const message = this.recordUiMessage({
+      id: sent?.key?.id || `${now}`,
+      jid,
+      key: sent?.key || { remoteJid: jid, id: `${now}`, fromMe: true } as WAMessageKey,
+      contact: resultContact,
+      fromMe: true,
+      sender: 'אני',
+      text: displayName,
+      type: 'contactMessage',
+      status: 'sent',
+      timestamp: now
+    })
+    return message
   }
 
   async sendFile(jid: string, file: Buffer, fileName: string, mimeType: string, caption = '', forwarded = false) {

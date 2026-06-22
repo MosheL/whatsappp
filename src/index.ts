@@ -554,6 +554,22 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/send-contact') {
+    const parsed = await readBotJson(req, res)
+    if (!parsed) return
+    try {
+      if (!parsed.data.jid || !parsed.data.displayName || !parsed.data.vcard) {
+        sendJson(res, 400, { error: 'חסר נמען, שם או vCard' })
+        return
+      }
+      const message = await parsed.bot.sendContact(parsed.data.jid, parsed.data.displayName, parsed.data.vcard)
+      sendJson(res, 200, { ok: true, message })
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/send-file') {
     try {
       const data = await readMultipart(req)
