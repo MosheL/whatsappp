@@ -10,7 +10,7 @@ const props = defineProps({
   selectedBot: { type: String, default: '' }
 })
 
-const emit = defineEmits(['select-chat', 'mark-read', 'chat-drag-over', 'chat-drag-leave', 'chat-drop'])
+const emit = defineEmits(['select-chat', 'mark-read', 'chat-drag-over', 'chat-drag-leave', 'chat-drop', 'toggle-archive', 'toggle-mute'])
 
 const CHAT_ITEM_HEIGHT = 72
 const CHAT_OVERSCAN = 8
@@ -49,6 +49,8 @@ watch(() => props.chats, () => nextTick(updateWindow), { flush: 'post' })
       :selected-bot="selectedBot"
       @select-chat="emit('select-chat', $event)"
       @mark-read="emit('mark-read', $event)"
+      @toggle-archive="(jid, archive) => emit('toggle-archive', jid, archive)"
+      @toggle-mute="(jid, muted) => emit('toggle-mute', jid, muted)"
       @chat-drag-over="emit('chat-drag-over', $event, chat.jid)"
       @chat-drag-leave="emit('chat-drag-leave', $event, chat.jid)"
       @chat-drop="emit('chat-drop', $event, chat.jid)"

@@ -61,8 +61,8 @@ onUnmounted(() => {
 
 watch(textSelected, () => {
   // Close menu if text is selected
-  if (textSelected.value) {
-    menuPosition.value = null
+  if (textSelected.value && props.actionMessageId) {
+    emit('toggle-message-menu', actionMessage.value)
   }
 })
 
@@ -218,7 +218,6 @@ function handleContextMenu(event, messages) {
   if (!messageId) return
   const message = messages.find(m => m.id === messageId)
   if (message) {
-    updateMenuPosition(event.currentTarget || bubble)
     emit('toggle-message-menu', message)
   }
 }
@@ -272,7 +271,6 @@ const MESSAGE_WINDOW_SIZE = 80
 const MESSAGE_WINDOW_STEP = 60
 const MESSAGE_ESTIMATED_HEIGHT = 104
 const messageWindowStart = ref(0)
-const menuPosition = ref(null)
 let expandingMessageWindow = false
 
 const visibleMessages = computed(() => props.messages
@@ -321,31 +319,11 @@ function handleThreadScroll() {
   const el = threadEl.value
   if (!el) return
   if (messageWindowStart.value > 0 && el.scrollTop <= messageTopSpacerHeight.value + el.clientHeight) expandMessageWindow()
-  if (props.actionMessageId) updateMenuPosition()
 }
 
 function toggleMessageMenu(event, message) {
-  updateMenuPosition(event.currentTarget)
   emit('toggle-message-menu', message)
 }
-
-function updateMenuPosition(button) {
-  const target = button || threadEl.value?.querySelector(`[data-message-id="${props.actionMessageId}"] .message-menu-button`)
-  if (!target) {
-    menuPosition.value = null
-    return
-  }
-  const rect = target.getBoundingClientRect()
-  menuPosition.value = {
-    left: Math.max(8, Math.min(window.innerWidth - 260, rect.left)),
-    top: Math.max(8, Math.min(window.innerHeight - 44, rect.bottom + 4))
-  }
-}
-
-watch(() => props.actionMessageId, id => {
-  if (!id) menuPosition.value = null
-  else nextTick(() => updateMenuPosition())
-})
 
 function scrollToBottom() {
   nextTick(() => {
@@ -435,7 +413,8 @@ defineExpose({ scrollToBottom, scrollToMessage })
         </span>
         <button
           v-show="!textSelected"
-          class="message-menu-button"
+          :class="['message-menu-button', { open: actionMessageId === message.id }]"
+          :style="{ '--anchor-name': `--mm-${message.id.replace(/[^a-zA-Z0-9]/g, '-')}` }"
           type="button"
           title="פעולות"
           @click.stop="toggleMessageMenu($event, message)"
@@ -648,9 +627,9 @@ defineExpose({ scrollToBottom, scrollToMessage })
     </div>
     <Teleport to="body">
       <div
-        v-if="actionMessage && menuPosition"
+        v-if="actionMessage && actionMessageId"
         class="message-menu message-menu-portal"
-        :style="{ left: `${menuPosition.left}px`, top: `${menuPosition.top}px` }"
+        :style="{ '--anchor-name': `--mm-${(actionMessage.id).replace(/[^a-zA-Z0-9]/g, '-')}` }"
         @click.stop
       >
         <button type="button" @click="emit('reply-message', actionMessage)">השב</button>

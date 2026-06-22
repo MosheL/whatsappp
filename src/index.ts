@@ -570,6 +570,50 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
+  // -------- Chat archive/mute --------
+
+  if (req.method === 'POST' && url.pathname === '/api/chat-archive') {
+    const parsed = await readBotJson(req, res)
+    if (!parsed) return
+    try {
+      if (!parsed.data.jid || typeof parsed.data.archive !== 'boolean') {
+        sendJson(res, 400, { error: 'חסר jid או ערך archive' })
+        return
+      }
+      const result = await parsed.bot.archiveChat(parsed.data.jid, parsed.data.archive)
+      // Emit chat update event to refresh UI
+      const chat = parsed.bot.chats.get(parsed.bot.contactCache.canonicalJid(parsed.data.jid))
+      if (chat) {
+        parsed.bot.events.emit('event', { type: 'chat', bot: parsed.authKey, chat })
+      }
+      sendJson(res, 200, result)
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/chat-mute') {
+    const parsed = await readBotJson(req, res)
+    if (!parsed) return
+    try {
+      if (!parsed.data.jid || typeof parsed.data.muted !== 'boolean') {
+        sendJson(res, 400, { error: 'חסר jid או ערך muted' })
+        return
+      }
+      const result = await parsed.bot.muteChat(parsed.data.jid, parsed.data.muted)
+      // Emit chat update event to refresh UI
+      const chat = parsed.bot.chats.get(parsed.bot.contactCache.canonicalJid(parsed.data.jid))
+      if (chat) {
+        parsed.bot.events.emit('event', { type: 'chat', bot: parsed.authKey, chat })
+      }
+      sendJson(res, 200, result)
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/send-file') {
     try {
       const data = await readMultipart(req)

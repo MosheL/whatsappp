@@ -685,6 +685,38 @@ async function markChatRead(jid = selectedChat.value) {
   }
 }
 
+async function toggleArchiveChat(jid, archive) {
+  if (!jid || !selectedBot.value || !authenticated.value) return
+  try {
+    await api('/api/chat-archive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bot: selectedBot.value, jid, archive })
+    })
+    // Update local chat state
+    const chat = chats.value.find(c => c.jid === jid)
+    if (chat) chat.isArchived = archive
+  } catch (err) {
+    error.value = err.message
+  }
+}
+
+async function toggleMuteChat(jid, muted) {
+  if (!jid || !selectedBot.value || !authenticated.value) return
+  try {
+    await api('/api/chat-mute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bot: selectedBot.value, jid, muted })
+    })
+    // Update local chat state
+    const chat = chats.value.find(c => c.jid === jid)
+    if (chat) chat.isMuted = muted
+  } catch (err) {
+    error.value = err.message
+  }
+}
+
 function autoMarkChatRead(jid = selectedChat.value) {
   if (!autoMarkRead.value || document.visibilityState !== 'visible' || jid !== selectedChat.value) return
   markChatRead(jid)
@@ -1462,6 +1494,8 @@ onUnmounted(() => {
         :selected-bot="selectedBot"
         @select-chat="selectChat"
         @mark-read="markChatRead"
+        @toggle-archive="toggleArchiveChat"
+        @toggle-mute="toggleMuteChat"
         @chat-drag-over="onChatDragOver"
         @chat-drag-leave="onChatDragLeave"
         @chat-drop="onChatDrop"

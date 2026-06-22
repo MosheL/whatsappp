@@ -468,6 +468,34 @@ export class Bot {
     return { marked: total }
   }
 
+  async archiveChat(jid: string, archive: boolean) {
+    if (!this.sock) throw new Error('Socket not connected')
+    jid = this.contactCache.canonicalJid(jid)
+    await this.sock.chatModify({ archive }, jid)
+    // Update local chat state immediately
+    const chat = this.chats.get(jid)
+    if (chat) {
+      chat.isArchived = archive
+      this.persistChat(chat)
+    }
+    return { ok: true, archived: archive }
+  }
+
+  async muteChat(jid: string, muted: boolean) {
+    if (!this.sock) throw new Error('Socket not connected')
+    jid = this.contactCache.canonicalJid(jid)
+    // Mute for 1 week (604800000 ms), or null to unmute
+    const muteDuration = muted ? 7 * 24 * 60 * 60 * 1000 : null
+    await this.sock.chatModify({ mute: muteDuration }, jid)
+    // Update local chat state immediately
+    const chat = this.chats.get(jid)
+    if (chat) {
+      chat.isMuted = muted
+      this.persistChat(chat)
+    }
+    return { ok: true, muted }
+  }
+
   async getMedia(jid: string, messageId: string) {
     return await this.messageStore.getMedia(jid, messageId)
   }

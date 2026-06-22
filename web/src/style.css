@@ -350,10 +350,11 @@ button {
   cursor: pointer;
   display: grid;
   gap: 12px;
-  grid-template-columns: 44px minmax(0, 1fr) 60px;
+  grid-template-columns: 44px minmax(0, 1fr) 72px;
   height: 72px;
   min-height: 72px;
   padding: 8px 12px;
+  position: relative;
   text-align: right;
   width: 100%;
   contain: layout paint style;
@@ -428,6 +429,71 @@ button {
   display: flex;
   gap: 2px;
   align-items: center;
+}
+
+/* Chat item context menu */
+.chat-item:hover .chat-actions .chat-menu-button,
+.chat-menu-button.open {
+  opacity: 1;
+}
+
+.chat-actions .chat-menu-button {
+  align-items: center;
+  anchor-name: var(--anchor-name);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  color: #667781;
+  cursor: pointer;
+  display: flex;
+  font-size: 14px;
+  height: 24px;
+  justify-content: center;
+  opacity: 0.3;
+  padding: 2px;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
+  width: 24px;
+}
+
+.chat-actions .chat-menu-button:hover {
+  background: #e0e6ea;
+  color: #1f2933;
+  opacity: 1;
+}
+
+.chat-menu-dropdown {
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position-anchor: var(--anchor-name);
+  right: anchor(right);
+  top: anchor(bottom);
+  min-width: 180px;
+  overflow: hidden;
+  padding: 4px 0;
+  position: fixed;
+  z-index: 9999;
+}
+
+.chat-menu-dropdown button {
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: #1f2933;
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px;
+  text-align: right;
+  transition: background 0.15s;
+  width: 100%;
+}
+
+.chat-menu-dropdown button:hover {
+  background: #f0f5f3;
 }
 
 .mark-read-v {
@@ -771,15 +837,15 @@ button {
   box-shadow: 0 6px 18px rgba(31, 41, 51, 0.16);
   display: flex;
   gap: 4px;
-  inset-inline-start: calc(anchor(end) + -12px);
   padding: 4px;
   position: absolute;
-  top: calc(anchor(top) - 1px);
   z-index: 8;
 }
 
 .message-menu-portal {
-  inset: auto;
+  position-anchor: var(--anchor-name);
+  right: anchor(right);
+  top: anchor(bottom);
   position: fixed;
   z-index: 10001;
 }
@@ -822,6 +888,7 @@ button {
 }
 
 .message-menu-button {
+  anchor-name: var(--anchor-name);
   background: rgba(238, 244, 242, 0.95);
   border: 1px solid #cfd7dc;
   border-radius: 999px;
