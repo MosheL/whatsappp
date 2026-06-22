@@ -340,25 +340,20 @@ function connectWs() {
   wsState.value = 'מתחבר'
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
   ws = new WebSocket(`${protocol}//${location.host}/ws`)
-  ws.onopen = async () => {
+  ws.onopen = () => {
     wsState.value = 'מחובר'
-    try {
-      const data = await api('/api/session')
-      await setBots(data.bots || [])
-      await loadChats()
-      await loadContacts()
-    } catch (err) {
-      if ([401, 402, 403].includes(err.status)) {
-        logout()
-        return
-      }
-      error.value = err.message
-    }
   }
   ws.onmessage = async event => {
     const data = JSON.parse(event.data)
     if (data.type === 'init') {
-      await setBots(data.bots || [])
+      // Update bots list without switching the selected bot
+      const nextBots = data.bots || []
+      bots.value = nextBots
+      if (!nextBots.some(bot => bot.id === selectedBot.value)) {
+        selectedBot.value = nextBots[0]?.id || ''
+      }
+      localStorage.setItem('wa-ui-selected-bot', selectedBot.value)
+      await Promise.all(nextBots.map(refreshQr))
       if (!chats.value.length) await loadChats()
       await loadContacts()
     }
