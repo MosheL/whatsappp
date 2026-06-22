@@ -836,19 +836,22 @@ function toggleMessageMenu(message) {
 
 async function sendContact() {
   if (!selectedChat.value || !selectedContactForSend.value) return
+  const contact = selectedContactForSend.value
+  const outgoingJid = activeSendJid()
+  const outgoingChat = selectedChat.value
+  const outgoingBot = selectedBot.value
   actionMessageId.value = ''
   showContactPicker.value = false
   error.value = ''
   try {
-    const contact = selectedContactForSend.value
     const vcard = makeVcard(contact)
     if (!vcard) { error.value = 'איש קשר חייב שם ומספר טלפון'; return }
     const data = await api('/api/send-contact', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bot: selectedBot.value, jid: activeSendJid(), displayName: contact.name, vcard })
+      body: JSON.stringify({ bot: outgoingBot, jid: outgoingJid, displayName: contact.name, vcard })
     })
-    if (data.message && selectedChat.value === activeSendJid()) {
+    if (data.message && selectedBot.value === outgoingBot && selectedChat.value === outgoingChat) {
       upsertMessage(data.message)
       scrollToBottom()
     }

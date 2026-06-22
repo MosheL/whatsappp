@@ -856,7 +856,7 @@ export class Bot {
     const sent = await this.sock.sendMessage(jid, {
       contacts: {
         displayName,
-        contact: [{ vcard }]
+        contacts: [{ vcard }]
       }
     })
     const now = Date.now()
