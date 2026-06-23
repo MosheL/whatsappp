@@ -19,6 +19,7 @@
   "type": "module",
   "dependencies": {
     "@vitejs/plugin-vue": "^6.0.7",
+    "@vueuse/core": "^14.3.0",
     "@whiskeysockets/baileys": "^7.0.0-rc13",
     "baileys": "npm:@whiskeysockets/baileys@^7.0.0-rc13",
     "baileys-redis-auth": "^2.0.1",

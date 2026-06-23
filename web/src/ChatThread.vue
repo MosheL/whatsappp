@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { onClickOutside } from '@vueuse/core'
 import { formatTime, formatDateFull, formatDateCaption } from './helpers.js'
 import {
   mediaUrl as renderMediaUrl,
@@ -19,6 +20,7 @@ import StatusTick from './StatusTick.vue'
 const typingTimers = new Map()
 const threadEl = ref(null)
 const textSelected = ref(false)
+const messageMenuRef = ref(null)
 
 function clearTypingAfterDelay(jid, typingTimestamp) {
   const existing = typingTimers.get(jid)
@@ -49,6 +51,11 @@ function onSelectionChange() {
 
 onMounted(() => {
   document.addEventListener('selectionchange', onSelectionChange)
+  onClickOutside(messageMenuRef, () => {
+    if (props.actionMessageId) {
+      emit('toggle-message-menu', actionMessage.value)
+    }
+  })
 })
 
 onUnmounted(() => {
@@ -628,6 +635,7 @@ defineExpose({ scrollToBottom, scrollToMessage })
     <Teleport to="body">
       <div
         v-if="actionMessage && actionMessageId"
+        ref="messageMenuRef"
         class="message-menu message-menu-portal"
         :style="{ '--anchor-name': `--mm-${(actionMessage.id).replace(/[^a-zA-Z0-9]/g, '-')}` }"
         @click.stop

@@ -844,9 +844,9 @@ button {
 
 .message-menu-portal {
   position-anchor: var(--anchor-name);
-  left: anchor(center);
+  left: calc(50% - 150px);
   bottom: anchor(top);
-  transform: translateX(-50%);
+
   position: fixed;
   z-index: 10001;
 }
