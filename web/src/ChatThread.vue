@@ -399,9 +399,8 @@ defineExpose({ scrollToBottom, scrollToMessage })
       class="message-row"
     >
       <div v-if="showDateCaption(mi)" class="date-caption" :key="'date-' + message.id">{{ dateCaption(mi) }}</div>
-      <article
-        :data-message-id="message.id"
-        :class="['bubble', { mine: message.fromMe, deleted: message.deleted, call: isCallMessage(message), menuOpen: actionMessageId === message.id }]"
+      <div
+        :class="['message-item', { mine: message.fromMe, menuOpen: actionMessageId === message.id }]"
       >
         <span
           v-show="!textSelected"
@@ -426,6 +425,10 @@ defineExpose({ scrollToBottom, scrollToMessage })
           title="פעולות"
           @click.stop="toggleMessageMenu($event, message)"
         >⋯</button>
+        <article
+          :data-message-id="message.id"
+          :class="['bubble', { mine: message.fromMe, deleted: message.deleted, call: isCallMessage(message), menuOpen: actionMessageId === message.id }]"
+        >
         <div v-if=" isForwardedMessage(message)" class="forwarded-label">הועברה</div>
         <strong v-if="!message.fromMe" class="sender-line">
           <span>{{ message.sender }}</span>
@@ -623,6 +626,7 @@ defineExpose({ scrollToBottom, scrollToMessage })
           />
         </span>
       </article>
+      </div>
     </div>
     <!-- Typing indicator under last message -->
     <div v-if="selectedChat" :class="['typing-bubble', { active: currentChat?.typing }]">

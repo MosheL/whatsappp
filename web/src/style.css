@@ -693,13 +693,29 @@ button {
 }
 
 .message-row {
-  contain: layout paint style;
+  contain: layout style;
   contain-intrinsic-size: auto 104px;
   content-visibility: auto;
   display: flex;
   flex: none;
   flex-direction: column;
   gap: 8px;
+  overflow: visible;
+}
+
+.message-item {
+  align-items: flex-start;
+  align-self: stretch;
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: start;
+  max-width: 100%;
+  position: relative;
+}
+
+.message-item.mine {
+  flex-direction: row;
+  justify-content: end;
 }
 
 .drop-overlay {
@@ -774,11 +790,12 @@ button {
 }
 
 .bubble {
-  align-self: flex-start;
   background: #ffffff;
   border-radius: 8px;
   box-shadow: 0 1px 2px rgba(31, 41, 51, 0.12);
+  flex: 0 1 auto;
   max-width: min(620px, 78%);
+  min-width: 0;
   padding: 8px 10px 6px;
   position: relative;
 }
@@ -786,7 +803,6 @@ button {
 
 
 .bubble.mine {
-  align-self: flex-end;
   background: #d9fdd3;
 }
 
@@ -858,14 +874,16 @@ button {
   border-radius: 999px;
   cursor: grab;
   display: flex;
+  flex: 0 0 auto;
   height: 24px;
   justify-content: center;
-  left: -56px;
-  opacity: 0;
-  position: absolute;
+  margin-inline-end: 2px;
+  opacity: 1;
+  order: 1;
+  position: sticky;
   top: 4px;
-  transition: opacity 0.12s ease;
   width: 24px;
+  z-index: 10;
 }
 
 .drag-icon {
@@ -874,49 +892,41 @@ button {
   width: 14px;
 }
 
-.bubble:hover .drag-handle,
-.bubble.menuOpen .drag-handle {
-  opacity: 1;
-}
 
-.bubble.mine .drag-handle {
-  left: auto;
-  right: -56px;
-}
 
 .drag-handle:active {
   cursor: grabbing;
 }
 
 .message-menu-button {
+  align-items: center;
   anchor-name: var(--anchor-name);
   background: rgba(238, 244, 242, 0.95);
   border: 1px solid #cfd7dc;
   border-radius: 999px;
   color: #53636b;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 120%;
+  font-weight: 900;
   height: 24px;
-  left: -30px; overflow: clip;
-  line-height: 1;
-  opacity: 0; font-weight: 900;
-  padding: 0;
-  position: absolute; font-size: 120%; line-height: 15px;
-  top: 4px;
-  transition: opacity 0.12s ease;
-  width: 24px;
-}
-
-.bubble:hover .message-menu-button,
-.bubble.menuOpen .message-menu-button {
+  justify-content: center;
+  line-height: 15px;
+  margin-inline-end: 6px;
   opacity: 1;
+  order: 2;
+  overflow: clip;
+  padding: 0;
+  position: sticky;
+  top: 4px;
+  width: 24px;
+  z-index: 10;
 }
 
-.bubble.mine .message-menu-button {
-  left: auto;
-  right: -30px;
-}
 
-.bubble.mine .message-menu {
-  inset-inline-end: calc(anchor(start) + -12px); inset-inline-start: auto;
+
+.message-item .bubble {
+  order: 3;
 }
 
 .message-menu button {
