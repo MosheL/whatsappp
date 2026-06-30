@@ -127,14 +127,15 @@ const orderedChats = computed(() => [...chats.value].sort((a, b) => {
 }))
 const filteredChats = computed(() => {
   const term = searchable(search.value).trim()
+  const identityTerm = searchableIdentity(search.value).trim()
   let list = orderedChats.value.filter(chat => Boolean(chat.isArchived) === showArchived.value)
   if (!term) return list
-  const phoneTerms = phoneSearchTerms(term)
+  const phoneTerms = phoneSearchTerms(identityTerm || term)
   list = list.filter(chat =>
     searchable(chat.name).includes(term) ||
-    searchable(chat.jid).includes(term) ||
-    searchable(chat.displayJid).includes(term) ||
-    searchable(chat.phoneNumber).includes(term) ||
+    identityMatches(chat.jid, identityTerm) ||
+    identityMatches(chat.displayJid, identityTerm) ||
+    identityMatches(chat.phoneNumber, identityTerm) ||
     searchable(chat.lastMessage).includes(term) ||
     phoneTerms.some(phoneTerm => chatPhoneValues(chat).some(value => value.includes(phoneTerm)))
   )
@@ -146,8 +147,8 @@ const filteredChats = computed(() => {
     if (keys.some(key => seenIdentities.has(key))) continue
     if (
       !searchable(contact?.name).includes(term) &&
-      !searchable(contact?.jid).includes(term) &&
-      !searchable(contact?.phoneNumber).includes(term) &&
+      !identityMatches(contact?.jid, identityTerm) &&
+      !identityMatches(contact?.phoneNumber, identityTerm) &&
       !phoneTerms.some(phoneTerm => [contact?.phoneNumber, contact?.jid].filter(Boolean).some(value => safeText(value).includes(phoneTerm)))
     ) continue
     keys.forEach(key => seenIdentities.add(key))
@@ -187,7 +188,15 @@ function searchable(value) {
   return safeText(value).toLowerCase()
 }
 
-/** Strip @s.whatsapp.net / @lid suffix and return clean digits */
+function searchableIdentity(value) {
+  return searchable(value).replace(/@.*$/, '')
+}
+
+function identityMatches(value, term) {
+  return Boolean(term) && searchableIdentity(value).includes(term)
+}
+
+/** Strip WhatsApp identity suffix and return clean digits */
 function cleanPhone(value) {
   const raw = String(value || '').replace(/@.*$/, '')
   return raw.replace(/[^\d]/g, '')
@@ -211,7 +220,7 @@ function chatPhoneValues(chat) {
 function identityKeys(item) {
   const keys = new Set()
   for (const value of [item?.jid, item?.phoneNumber, item?.displayJid]) {
-    const text = searchable(value)
+    const text = searchableIdentity(value)
     if (!text) continue
     keys.add(text)
     for (const phoneTerm of phoneSearchTerms(text)) keys.add(`phone:${phoneTerm}`)
@@ -972,13 +981,14 @@ function selectForwardTarget(jid) {
 
 const forwardableChats = computed(() => {
   const term = searchable(forwardSearch.value).trim()
+  const identityTerm = searchableIdentity(forwardSearch.value).trim()
   const list = orderedChats.value.filter(chat => chat.jid !== selectedChat.value)
   if (!term) return list.slice(0, 50)
   return list.filter(chat =>
     searchable(chat.name).includes(term) ||
-    searchable(chat.jid).includes(term) ||
-    searchable(chat.displayJid).includes(term) ||
-    searchable(chat.phoneNumber).includes(term)
+    identityMatches(chat.jid, identityTerm) ||
+    identityMatches(chat.displayJid, identityTerm) ||
+    identityMatches(chat.phoneNumber, identityTerm)
   ).slice(0, 50)
 })
 
