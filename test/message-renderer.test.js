@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   chatPreviewStatus,
+  formatMessageText,
   hasLinkCandidate,
   isForwardedMessage,
   linkPreviewHref,
@@ -84,4 +85,91 @@ test('treats a legacy group read status without receipt details as delivered', (
     lastMessageFromMe: true,
     lastMessageStatus: 4
   }), 'delivered')
+})
+
+test('renders ~text~ as strikethrough', () => {
+  const tokens = formatMessageText('hello ~world~ end')
+  assert.deepEqual(tokens, [
+    { type: 'text', text: 'hello ', bold: false, strike: false },
+    { type: 'text', text: 'world', bold: false, strike: true },
+    { type: 'text', text: ' end', bold: false, strike: false }
+  ])
+  assert.equal(messagePreview({ text: 'hello ~world~ end' }), 'hello <del>world</del> end')
+})
+
+test('combines bold and strikethrough when both markers wrap a span', () => {
+  const tokens = formatMessageText('*a ~b~ c*')
+  assert.equal(tokens.length, 3)
+  assert.equal(tokens[0].text, 'a ')
+  assert.equal(tokens[0].bold, true)
+  assert.equal(tokens[0].strike, false)
+  assert.equal(tokens[1].text, 'b')
+  assert.equal(tokens[1].bold, true)
+  assert.equal(tokens[1].strike, true)
+  assert.equal(tokens[2].text, ' c')
+  assert.equal(tokens[2].bold, true)
+  assert.equal(tokens[2].strike, false)
+  // <b> wraps <del> so the bold weight is preserved while the line-through stays.
+  assert.equal(
+    messagePreview({ text: '*a ~b~ c*' }),
+    '<b>a </b><b><del>b</del></b><b> c</b>'
+  )
+})
+
+test('does not nest the same inline marker twice', () => {
+  // The outer strike spans `one ~two`. The dangling closing ~ at the very end
+  // has no pair to close it, so the trailing `three~` stays plain — mirroring
+  // WhatsApp's behavior of ignoring unmatched markers.
+  const tokens = formatMessageText('~one ~two~ three~')
+  assert.deepEqual(tokens, [
+    { type: 'text', text: 'one ~two', bold: false, strike: true },
+    { type: 'text', text: ' three~', bold: false, strike: false }
+  ])
+})
+
+test('detects plain email addresses and renders mailto links', () => {
+  const tokens = formatMessageText('mail me at user@example.com today')
+  const email = tokens.find(token => token.type === 'email')
+  assert.ok(email, 'expected an email token')
+  assert.equal(email.text, 'user@example.com')
+  assert.equal(email.href, 'mailto:user@example.com')
+  assert.equal(email.bold, false)
+  // The email must not be matched as a mention.
+  assert.equal(tokens.some(token => token.type === 'mention'), false)
+  assert.equal(messagePreview({ text: 'user@example.com' }), '<a href="mailto:user@example.com" target="_blank" rel="noopener">user@example.com</a>')
+})
+
+test('handles complex emails with dots, plus tags and multi-segment TLDs', () => {
+  const tokens = formatMessageText('a.b+tag@example.co.uk')
+  assert.equal(tokens[0].type, 'email')
+  assert.equal(tokens[0].text, 'a.b+tag@example.co.uk')
+  assert.equal(tokens[0].href, 'mailto:a.b+tag@example.co.uk')
+})
+
+test('does not mistake a plain phone @mention for an email', () => {
+  const tokens = formatMessageText('hi @972501234567')
+  const mention = tokens.find(token => token.type === 'mention')
+  assert.ok(mention, 'expected a mention token')
+  assert.equal(mention.jid, '972501234567')
+  assert.equal(tokens.some(token => token.type === 'email'), false)
+})
+
+test('renders wa.me and chat.whatsapp.com without http as https links', () => {
+  const tokens = formatMessageText('join chat.whatsapp.com/ABCDEF12 or wa.me/972501234567')
+  const links = tokens.filter(token => token.type === 'link')
+  assert.equal(links.length, 2)
+  assert.equal(links[0].text, 'chat.whatsapp.com/ABCDEF12')
+  assert.equal(links[0].href, 'https://chat.whatsapp.com/ABCDEF12')
+  assert.equal(links[1].text, 'wa.me/972501234567')
+  assert.equal(links[1].href, 'https://wa.me/972501234567')
+  assert.equal(
+    messagePreview({ text: 'wa.me/972501234567' }),
+    '<a href="https://wa.me/972501234567" target="_blank" rel="noopener">wa.me/972501234567</a>'
+  )
+})
+
+test('lets a schema-prefixed WhatsApp link keep its original scheme', () => {
+  const tokens = formatMessageText('see https://wa.me/972501234567')
+  const link = tokens.find(token => token.type === 'link')
+  assert.equal(link.href, 'https://wa.me/972501234567')
 })

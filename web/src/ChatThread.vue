@@ -218,6 +218,9 @@ function handleDoubleClick(event, messages) {
 
 function handleContextMenu(event, messages) {
   if (!props.selectedChat || props.loadingMessages) return
+  // Allow browser native right-click on images and videos
+  const target = event.target
+  if (target.tagName === 'IMG' || target.tagName === 'VIDEO') return
   event.preventDefault()
   const bubble = event.target.closest?.('.bubble')
   if (!bubble) return
@@ -597,9 +600,12 @@ defineExpose({ scrollToBottom, scrollToMessage })
         </a>
         <p v-if="!isCallMessage(message) && !isContactMessage(message) && !isInteractiveMessage(message)" class="message-text" dir="auto">
           <template v-for="(part, index) in formatMessageText(message.text || message.type)" :key="`${message.id}:text:${index}`">
-            <a v-if="part.type === 'link'" :class="{ bold: part.bold }" :href="part.href" target="_blank" rel="noreferrer">{{ part.text }}</a>
-            <a v-else-if="part.type === 'mention'" :class="{ bold: part.bold }" class="mention-link" href="#" @click.prevent="emit('mention-click', part.jid)">{{ part.text }}</a>
-            <strong v-else-if="part.type === 'bold'">{{ part.text }}</strong>
+            <a v-if="part.type === 'link'" :class="{ bold: part.bold, strike: part.strike }" :href="part.href" target="_blank" rel="noreferrer">{{ part.text }}</a>
+            <a v-else-if="part.type === 'email'" :class="{ bold: part.bold, strike: part.strike }" :href="part.href" target="_blank" rel="noreferrer">{{ part.text }}</a>
+            <a v-else-if="part.type === 'mention'" :class="{ bold: part.bold, strike: part.strike }" class="mention-link" href="#" @click.prevent="emit('mention-click', part.jid)">{{ part.text }}</a>
+            <strong v-else-if="part.bold && !part.strike">{{ part.text }}</strong>
+            <strong v-else-if="part.bold && part.strike"><del>{{ part.text }}</del></strong>
+            <del v-else-if="part.strike">{{ part.text }}</del>
             <span v-else>{{ part.text }}</span>
           </template>
         </p>

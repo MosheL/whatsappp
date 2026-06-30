@@ -709,7 +709,7 @@ button {
   display: flex;
   flex-direction: row-reverse;
   justify-content: start;
-  max-width: 100%;
+  max-width: 100%; gap: 6px;
   position: relative;
 }
 
@@ -878,7 +878,7 @@ button {
   height: 24px;
   justify-content: center;
   margin-inline-end: 2px;
-  opacity: 1;
+  opacity: 0;
   order: 1;
   position: sticky;
   top: 4px;
@@ -893,6 +893,15 @@ button {
 }
 
 
+
+.message-item:hover .drag-handle,
+.message-item:hover .message-menu-button {
+  opacity: 1;
+}
+
+.message-item .message-menu-button.open {
+  opacity: 1;
+}
 
 .drag-handle:active {
   cursor: grabbing;
@@ -912,8 +921,7 @@ button {
   height: 24px;
   justify-content: center;
   line-height: 15px;
-  margin-inline-end: 6px;
-  opacity: 1;
+  opacity: 0;
   order: 2;
   overflow: clip;
   padding: 0;
@@ -1150,6 +1158,11 @@ button {
 
 .message-text a.bold {
   font-weight: 700;
+}
+
+.message-text a.strike,
+.message-text del {
+  text-decoration: line-through;
 }
 
 .message-text strong {

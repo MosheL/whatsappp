@@ -289,87 +289,163 @@ export function reactionUserKey(reaction) {
 }
 
 /**
- * Format message text with bold and links.
+ * Format message text with bold, strikethrough, links, emails and mentions.
+ *
+ * Inline markers:
+ *   *text*  → bold
+ *   ~text~  → strikethrough (renders as <del>)
+ *
+ * Auto-detected:
+ *   https://… / www.…                     → http(s) link
+ *   wa.me/…  / chat.whatsapp.com/…        → WhatsApp link (no scheme needed)
+ *   user@host.tld                         → mailto: link (excluded from @mention)
+ *   @[phone|name] / @jid / @972…          → mention
  */
 export function formatMessageText(value) {
   const textValue = String(value || '')
-  return formatInlineText(textValue, false)
+  return formatInlineText(textValue, false, false)
 }
 
-function formatInlineText(textValue, bold) {
+function formatInlineText(textValue, bold, strike) {
   if (!textValue) return []
   const tokens = []
   let cursor = 0
 
   while (cursor < textValue.length) {
-    const open = textValue.indexOf('*', cursor)
+    const nextStar = textValue.indexOf('*', cursor)
+    const nextTilde = textValue.indexOf('~', cursor)
+
+    let open = -1
+    let marker = ''
+    if (nextStar >= 0 && (nextTilde < 0 || nextStar < nextTilde)) {
+      open = nextStar
+      marker = '*'
+    } else if (nextTilde >= 0) {
+      open = nextTilde
+      marker = '~'
+    }
+
     if (open < 0) {
-      tokens.push(...linkifyText(textValue.slice(cursor), bold))
+      tokens.push(...linkifyText(textValue.slice(cursor), bold, strike))
       break
     }
-    const close = findBoldClose(textValue, open + 1)
+
+    // If we're already inside this marker type, the new occurrence is literal text.
+    const alreadyInside = (marker === '*' && bold) || (marker === '~' && strike)
+    const close = alreadyInside ? -1 : findInlineClose(textValue, open + 1, marker)
     if (close < 0) {
-      tokens.push(...linkifyText(textValue.slice(cursor), bold))
+      tokens.push(...linkifyText(textValue.slice(cursor), bold, strike))
       break
     }
-    tokens.push(...linkifyText(textValue.slice(cursor, open), bold))
-    tokens.push(...linkifyText(textValue.slice(open + 1, close), true))
+
+    tokens.push(...linkifyText(textValue.slice(cursor, open), bold, strike))
+    const innerBold = bold || marker === '*'
+    const innerStrike = strike || marker === '~'
+    tokens.push(...formatInlineText(textValue.slice(open + 1, close), innerBold, innerStrike))
     cursor = close + 1
   }
 
   return tokens.filter(token => token.text)
 }
 
-function findBoldClose(textValue, from) {
-  let close = textValue.indexOf('*', from)
+function findInlineClose(textValue, from, marker) {
+  let close = textValue.indexOf(marker, from)
   while (close >= 0) {
     const inner = textValue.slice(from, close)
     const next = textValue[close + 1] || ''
     if (inner.trim() && (!next || /[\s.,!?;:)\]}"']/.test(next))) return close
-    close = textValue.indexOf('*', close + 1)
+    close = textValue.indexOf(marker, close + 1)
   }
   return -1
 }
 
-function linkifyText(textValue, bold) {
-  const urlPattern = /\b(?:https?:\/\/|www\.)[^\s<>"']+[^\s<>"'.,!?;:)\]}]/gi
-  // Match @[phone|name] structured mentions and plain @mention
-  const mentionPattern = /@(?:\[(\d+)\|([^\]]+)\]|([^\s<>"']+))/gi
+// Email: local@domain.tld. Must contain at least one dot in the domain
+// followed by a 2+ letter TLD, so plain @phones and @jids don't match.
+const emailPattern = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g
+
+// WhatsApp links without scheme: wa.me/<digits> or chat.whatsapp.com/...
+const waLinkPattern = /\b(?:wa\.me\/[A-Za-z0-9/?#&=._~%\-]+|chat\.whatsapp\.com\/[A-Za-z0-9/?#&=._~%\-]+|whatsapp\.com\/[A-Za-z0-9/?#&=._~%\-]+)/gi
+
+// Generic http(s) and www. URLs.
+const urlPattern = /\b(?:https?:\/\/|www\.)[^\s<>"']+[^\s<>"'.,!?;:)\]}]/gi
+
+// @[phone|name] structured mentions and plain @mention. Excludes emails —
+// emails are matched first and their ranges are removed before this runs.
+const mentionPattern = /@(?:\[(\d+)\|([^\]]+)\]|([^\s<>"'.]+))/gi
+
+function linkifyText(textValue, bold, strike) {
   const tokens = []
   let cursor = 0
 
-  // Collect all matches sorted by position
-  const matches = []
+  // Collect every match (URL, WhatsApp link, email, mention) and resolve overlaps.
+  const ranges = []
   for (const m of textValue.matchAll(urlPattern)) {
-    matches.push({ type: 'url', index: m.index, length: m[0].length, url: m[0] })
+    ranges.push({ type: 'url', index: m.index, length: m[0].length, url: m[0] })
+  }
+  for (const m of textValue.matchAll(waLinkPattern)) {
+    ranges.push({ type: 'wa', index: m.index, length: m[0].length, url: m[0] })
+  }
+  for (const m of textValue.matchAll(emailPattern)) {
+    ranges.push({ type: 'email', index: m.index, length: m[0].length, address: m[0] })
   }
   for (const m of textValue.matchAll(mentionPattern)) {
-    // m[1]=phone, m[2]=name (for @[phone|name]), m[3]=raw jid (for plain @mention)
     const isStructured = Boolean(m[1])
-    matches.push({
+    ranges.push({
       type: 'mention',
       index: m.index,
       length: m[0].length,
       text: isStructured ? m[2] : m[0],
-      jid: isStructured ? m[1] : m[3],
-      bold
+      jid: isStructured ? m[1] : m[3]
     })
   }
-  matches.sort((a, b) => a.index - b.index || b.length - a.length)
 
-  for (const match of matches) {
+  // Keep the longest/earliest match when ranges overlap. Emails override mentions,
+  // URLs override emails inside the URL, etc. — sort by index then length desc.
+  ranges.sort((a, b) => a.index - b.index || b.length - a.length)
+  const used = []
+  const filtered = []
+  for (const range of ranges) {
+    const end = range.index + range.length
+    const overlaps = used.some(u => range.index < u.end && end > u.start)
+    if (overlaps) continue
+    filtered.push(range)
+    used.push({ start: range.index, end })
+  }
+  filtered.sort((a, b) => a.index - b.index)
+
+  for (const match of filtered) {
     if (match.index < cursor) continue
-    if (match.index > cursor) tokens.push({ type: bold ? 'bold' : 'text', text: textValue.slice(cursor, match.index) })
+    if (match.index > cursor) {
+      tokens.push({ type: 'text', text: textValue.slice(cursor, match.index), bold, strike })
+    }
     if (match.type === 'url') {
-      tokens.push({ type: 'link', text: match.url, href: match.url.startsWith('www.') ? `https://${match.url}` : match.url, bold })
+      const href = match.url.startsWith('www.') ? `https://${match.url}` : match.url
+      tokens.push({ type: 'link', text: match.url, href, bold, strike })
+    } else if (match.type === 'wa') {
+      tokens.push({ type: 'link', text: match.url, href: `https://${match.url}`, bold, strike })
+    } else if (match.type === 'email') {
+      tokens.push({ type: 'email', text: match.address, href: `mailto:${match.address}`, bold, strike })
     } else {
-      tokens.push({ type: 'mention', text: match.text, jid: match.jid, bold })
+      tokens.push({ type: 'mention', text: match.text, jid: match.jid, bold, strike })
     }
     cursor = match.index + match.length
   }
 
-  if (cursor < textValue.length) tokens.push({ type: bold ? 'bold' : 'text', text: textValue.slice(cursor) })
+  if (cursor < textValue.length) {
+    tokens.push({ type: 'text', text: textValue.slice(cursor), bold, strike })
+  }
   return tokens
+}
+
+/**
+ * Wrap an inline text run with the markup for its bold/strike flags.
+ * <b> wraps <del> so bold + strike renders both weight and line-through.
+ */
+function wrapInline(text, bold, strike) {
+  let out = text
+  if (strike) out = `<del>${out}</del>`
+  if (bold) out = `<b>${out}</b>`
+  return out
 }
 
 /**
@@ -377,17 +453,23 @@ function linkifyText(textValue, bold) {
  */
 function renderTokens(tokens) {
   return tokens.map(token => {
-    if (token.type === 'bold') return `<b>${escapeHtml(token.text)}</b>`
-    if (token.type === 'link') {
-      const href = token.href || token.text
-      const linkText = token.bold ? `<b>${escapeHtml(token.text)}</b>` : escapeHtml(token.text)
-      return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">${linkText}</a>`
-    }
-    if (token.type === 'mention') {
-      const text = token.bold ? `<b>${escapeHtml(token.text)}</b>` : escapeHtml(token.text)
-      return `<a href="#mention-${escapeHtml(token.jid)}" class="mention-link" data-jid="${escapeHtml(token.jid)}">${text}</a>`
-    }
-    return escapeHtml(token.text)
+    const inner = (() => {
+      if (token.type === 'link') {
+        const href = token.href || token.text
+        const linkText = wrapInline(escapeHtml(token.text), token.bold, token.strike)
+        return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">${linkText}</a>`
+      }
+      if (token.type === 'email') {
+        const linkText = wrapInline(escapeHtml(token.text), token.bold, token.strike)
+        return `<a href="${escapeHtml(token.href)}" target="_blank" rel="noopener">${linkText}</a>`
+      }
+      if (token.type === 'mention') {
+        const text = wrapInline(escapeHtml(token.text), token.bold, token.strike)
+        return `<a href="#mention-${escapeHtml(token.jid)}" class="mention-link" data-jid="${escapeHtml(token.jid)}">${text}</a>`
+      }
+      return wrapInline(escapeHtml(token.text), token.bold, token.strike)
+    })()
+    return inner
   }).join('')
 }
 

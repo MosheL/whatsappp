@@ -75,6 +75,22 @@ WhatsApp uses **LID** (Login ID) identifiers (`13104096235587@lid`) alongside ph
 - `message-store.ts` handles persistence, retrieval, trimming, media caching
 - `message-processor.ts` parses message content (text, images, video, audio, documents, view-once, calls)
 
+#### Text formatting
+Outgoing and incoming text is rendered by `web/src/message-renderer.js → formatMessageText()`. The renderer supports:
+
+| Source | Renders as |
+| --- | --- |
+| `*bold*` | **bold** (`<strong>`) |
+| `~struck~` | ~~struck~~ (`<del>`) |
+| `*bold ~strike~*` | combined bold + strike |
+| `https://example.com` / `www.example.com` | regular http(s) link |
+| `wa.me/123…` / `chat.whatsapp.com/CODE` / `whatsapp.com/…` | WhatsApp link, no scheme needed (`href` is rewritten to `https://…`) |
+| `user@example.com` | `mailto:` link |
+| `@[972501234567\|Alice]` / `@972501234567` | mention (resolved in `App.vue → onMentionClick`) |
+| `@someone` (no TLD) | plain mention |
+
+Overlap resolution: emails beat mentions, URLs beat emails, WhatsApp link regex runs independently. The same parser is used by both the message bubble (`ChatThread.vue`) and the chat-list preview (`messagePreview`).
+
 ### Chats
 - `chat-store.ts` manages chat metadata in Redis
 - `persistChat()` writes to Redis hash + sorted set for ordering
