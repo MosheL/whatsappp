@@ -503,6 +503,57 @@ export function interactiveTypeLabel(message) {
 }
 
 /**
+ * Message types the UI can render with dedicated UI. Anything not in this set
+ * and lacking text/media/contact/interactive/call/viewOnce content is shown as
+ * an "unsupported message" placeholder.
+ */
+const SUPPORTED_MESSAGE_TYPES = new Set([
+  'conversation',
+  'extendedTextMessage',
+  'imageMessage',
+  'videoMessage',
+  'documentMessage',
+  'audioMessage',
+  'pttMessage',
+  'stickerMessage',
+  'contactMessage',
+  'contactsArrayMessage',
+  'buttonsResponseMessage',
+  'listResponseMessage',
+  'templateButtonReplyMessage',
+  'interactiveResponseMessage',
+  'callMessage',
+  'callLogMesssage',
+  'callLogMessage',
+  'unknown'
+])
+
+/**
+ * Whether a message has any renderable content the UI knows how to display.
+ */
+function hasRenderableContent(message) {
+  return Boolean(
+    message?.text ||
+    message?.media?.kind ||
+    message?.contact ||
+    message?.interactiveData ||
+    message?.call ||
+    message?.viewOnce ||
+    message?.linkPreview
+  )
+}
+
+/**
+ * Whether a message is unsupported (no renderable content and an unknown type).
+ * Deleted messages are not unsupported — they have their own placeholder.
+ */
+export function isUnsupportedMessage(message) {
+  if (!message || message.deleted) return false
+  if (hasRenderableContent(message)) return false
+  return !SUPPORTED_MESSAGE_TYPES.has(String(message.type || ''))
+}
+
+/**
  * Short preview text for a message (returns HTML for text messages).
  */
 export function messagePreview(message) {
@@ -513,6 +564,7 @@ export function messagePreview(message) {
   if (isContactMessage(message)) {
     return hasMultipleContacts(message) ? 'אנשי קשר' : 'איש קשר'
   }
+  if (isUnsupportedMessage(message)) return 'הודעה לא נתמכת'
   const text = message.text || message.type || ''
   return renderTokens(formatMessageText(text))
 }

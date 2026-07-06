@@ -36,7 +36,7 @@ WhatsApp Web (Baileys)
     ↓ (raw events: messages.upsert, presence.update, contacts.upsert, etc.)
 bot.ts
     ├── recordBaileysMessage() → UiMessage
-    │   ├── message-processor.ts (parse WA message → text, type, media)
+    │   ├── message-processor.ts (parse WA message → text, type, media, interactive data)
     │   ├── contact-cache.ts    (resolve sender name, LID→phone)
     │   └── message-store.ts    (persist to Redis)
     │
@@ -73,7 +73,7 @@ WhatsApp uses **LID** (Login ID) identifiers (`13104096235587@lid`) alongside ph
 - Raw Baileys `WAMessage` → `UiMessage` via `recordBaileysMessage()`
 - Stored in Redis as JSON payloads, indexed by timestamp in sorted sets
 - `message-store.ts` handles persistence, retrieval, trimming, media caching
-- `message-processor.ts` parses message content (text, images, video, audio, documents, view-once, calls)
+- `message-processor.ts` parses message content (text, images, video, audio, documents, view-once, calls, interactive buttons/lists/templates)
 
 #### Text formatting
 Outgoing and incoming text is rendered by `web/src/message-renderer.js → formatMessageText()`. The renderer supports:
@@ -90,6 +90,21 @@ Outgoing and incoming text is rendered by `web/src/message-renderer.js → forma
 | `@someone` (no TLD) | plain mention |
 
 Overlap resolution: emails beat mentions, URLs beat emails, WhatsApp link regex runs independently. The same parser is used by both the message bubble (`ChatThread.vue`) and the chat-list preview (`messagePreview`).
+
+#### Interactive messages
+WhatsApp Cloud API / native-flow interactive messages (templates, buttons, lists, and `interactiveMessage`) are parsed by `message-processor.ts → messageInteractiveData()` into an `InteractiveData` block on the `UiMessage`, and rendered by `ChatThread.vue` with clickable buttons. Native-flow buttons carry their payload as a `buttonParamsJson` JSON string; the parser decodes it per button type:
+
+| Button `name` | Parsed into | Rendered as |
+| --- | --- | --- |
+| `cta_url` | `type: 'url'`, `url`, `display_text` | clickable link opening in a new tab |
+| `call_action` | `type: 'call'`, `phone`, `display_text` | `tel:` link |
+| `copy_code` | `type: 'copy_code'`, `code`, `display_text` | button that copies `code` to clipboard |
+| `quick_reply` | `type: 'quick_reply'`, `id`, `display_text` | disabled button (display only) |
+
+The interactive **body** is rendered through the same `formatMessageText()` parser, so `*bold*`, links, and emails inside the body are formatted. Replies to interactive messages (`interactiveResponseMessage`, e.g. a CTA button tap) are extracted as plain text via `messageText()` and shown as a normal text message.
+
+#### Unsupported messages
+Message types the UI has no dedicated renderer for (e.g. `locationMessage`, `orderMessage`, `productMessage`, `groupInviteMessage`, `eventMessage`) are shown as a styled **"הודעה לא נתמכת"** placeholder instead of a blank bubble or a raw type string. Detection lives in `web/src/message-renderer.js → isUnsupportedMessage()`: a message is unsupported only when it has no renderable content (no text, media, contact, `interactiveData`, call, view-once, or link preview) **and** its `type` is outside the supported set. Deleted messages are never flagged (they keep their own placeholder). The server-side chat-list preview (`bot.ts`) likewise falls back to `"הודעה לא נתמכת"` for these messages instead of leaking the raw protobuf type.
 
 ### Chats
 - `chat-store.ts` manages chat metadata in Redis

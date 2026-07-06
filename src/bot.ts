@@ -48,6 +48,7 @@ import {
   callInfoFromMessage,
   messagePatchFromContent,
   isTransportMessage,
+  isSupportedMessageType,
   messageInteractiveData,
   phoneFromVcard
 } from './message-processor.ts'
@@ -1008,7 +1009,7 @@ export class Bot {
       const messageData = currentMessage || storedMessage
       console.log('📥 recordUiMessage callback:', 'found currentMessage:', Boolean(currentMessage), 'messageData.status:', messageData.status, 'chat.lastMessageStatus before:', chat.lastMessageStatus)
       if (displayable && isLatestKnown) {
-        chat.lastMessage = messageData.text || (messageData.viewOnce ? viewOnceLabel(messageData.viewOnceType) : messageData.contact ? (messageData.contact.contacts?.length ? 'אנשי קשר' : 'איש קשר') : messageData.media?.kind === 'image' ? 'תמונה' : messageData.media?.kind === 'video' ? 'וידאו' : messageData.media?.kind === 'document' ? 'קובץ' : messageData.type)
+        chat.lastMessage = messageData.text || (messageData.viewOnce ? viewOnceLabel(messageData.viewOnceType) : messageData.contact ? (messageData.contact.contacts?.length ? 'אנשי קשר' : 'איש קשר') : messageData.media?.kind === 'image' ? 'תמונה' : messageData.media?.kind === 'video' ? 'וידאו' : messageData.media?.kind === 'document' ? 'קובץ' : isSupportedMessageType(messageData.type) ? messageData.type : 'הודעה לא נתמכת')
         chat.lastMessageFromMe = messageData.fromMe
         // Only overwrite status/receipt if the incoming data has meaningful values.
         // Incoming messages often have undefined status, which would erase the

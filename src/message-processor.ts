@@ -100,6 +100,11 @@ export function messageText(message: WAMessageContent | null | undefined): strin
   if (content.interactiveMessage) {
     return content.interactiveMessage.body?.text || content.interactiveMessage.header?.title || ''
   }
+  if (content.interactiveResponseMessage) {
+    // Reply to an interactive (native-flow) message, e.g. a CTA button tap.
+    // The user-visible text lives in body.text.
+    return content.interactiveResponseMessage.body?.text || ''
+  }
 
   return (
     content.conversation ||
@@ -134,7 +139,8 @@ export function messageType(message: WAMessageContent | null | undefined): strin
     'listResponseMessage',
     'templateButtonReplyMessage',
     'contactMessage',
-    'contactsArrayMessage'
+    'contactsArrayMessage',
+    'interactiveResponseMessage'
   ]
   const preferred = preferredTypes.find(type => content[type])
   if (preferred) return preferred
@@ -405,8 +411,53 @@ export function messageListData(content: any): InteractiveData | undefined {
 }
 
 /**
- * Extract interactive data from an interactive message (native flow / shop / collection / carousel).
+ * Parse a native-flow button (`name` + `buttonParamsJson`) into a renderable
+ * InteractiveButton. WhatsApp Cloud API `cta_url` messages arrive this way:
+ *   name = 'cta_url', buttonParamsJson = '{"display_text":"...","url":"..."}'
+ * Other known types: 'call_action' (display_text + phone_number),
+ * 'copy_code' (display_text + code), 'quick_reply' (display_text + id).
  */
+function nativeFlowButtonData(b: any): InteractiveButton | null {
+  if (!b) return null
+  const name = String(b.name || '')
+  let params: any = {}
+  if (b.buttonParamsJson) {
+    try {
+      params = JSON.parse(b.buttonParamsJson)
+    } catch {
+      params = {}
+    }
+  }
+  const displayText = String(params.display_text || params.title || '')
+  const text = displayText || name
+  if (!text) return null
+  const button: InteractiveButton = { text, name }
+  if (name === 'cta_url') {
+    const url = String(params.url || '')
+    button.type = 'url'
+    if (url) button.url = url
+  } else if (name === 'call_action') {
+    const phone = String(params.phoneNumber || params.phone_number || params.phone || '')
+    button.type = 'call'
+    if (phone) button.phone = phone
+  } else if (name === 'copy_code') {
+    const code = String(params.code || params.copied_code || '')
+    button.type = 'copy_code'
+    if (code) button.code = code
+    if (params.id) button.id = String(params.id)
+  } else if (name === 'quick_reply') {
+    button.type = 'quick_reply'
+    if (params.id) button.id = String(params.id)
+  } else if (params.url) {
+    // Unknown type but it carries a URL — render as a link.
+    button.type = 'url'
+    button.url = String(params.url)
+  } else {
+    button.type = name || 'quick_reply'
+  }
+  return button
+}
+
 /**
  * Extract interactive data from an interactive message (native flow / shop / collection / carousel).
  */
@@ -417,12 +468,13 @@ export function messageInteractiveMsgData(content: any): InteractiveData | undef
   const body = im.body?.text || ''
   const footer = im.footer?.text || ''
 
-  // Native flow message (modern buttons)
+  // Native flow message (modern buttons). Each button has a `name` (the action
+  // type, e.g. 'cta_url', 'call_action', 'copy_code', 'quick_reply') and a
+  // `buttonParamsJson` string holding the real display text + action payload.
   if (im.nativeFlowMessage) {
-    const buttons: InteractiveButton[] = (im.nativeFlowMessage.buttons || []).map((b: any) => ({
-      text: b.name || '',
-      id: b.buttonParamsJson || ''
-    })).filter((b: InteractiveButton) => b.text)
+    const buttons: InteractiveButton[] = (im.nativeFlowMessage.buttons || [])
+      .map((b: any) => nativeFlowButtonData(b))
+      .filter((b: InteractiveButton) => b.text)
     return {
       type: 'interactive',
       title: header,
@@ -582,4 +634,41 @@ export function isTransportMessage(type: string) {
     'reactionMessage',
     'pollUpdateMessage'
   ].includes(type)
+}
+
+// -------- Supported message detection --------
+
+/**
+ * Message types the web UI knows how to render with dedicated UI (text, media,
+ * contact, call, view-once, link preview, or interactive data). Anything else
+ * falls back to the "unsupported message" placeholder.
+ */
+const SUPPORTED_MESSAGE_TYPES = new Set([
+  'conversation',
+  'extendedTextMessage',
+  'imageMessage',
+  'videoMessage',
+  'documentMessage',
+  'audioMessage',
+  'pttMessage',
+  'stickerMessage',
+  'contactMessage',
+  'contactsArrayMessage',
+  'buttonsResponseMessage',
+  'listResponseMessage',
+  'templateButtonReplyMessage',
+  'interactiveResponseMessage',
+  'callMessage',
+  'callLogMesssage',
+  'callLogMessage',
+  'unknown' // text-only / stub messages handled by the text path
+])
+
+/**
+ * Whether a message type is something the UI can render. Note that interactive
+ * messages (template/buttons/list/interactive) carry their own `interactiveData`
+ * and are detected separately via `messageInteractiveData`.
+ */
+export function isSupportedMessageType(type: string): boolean {
+  return SUPPORTED_MESSAGE_TYPES.has(type)
 }

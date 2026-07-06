@@ -5,6 +5,7 @@ import {
   formatMessageText,
   hasLinkCandidate,
   isForwardedMessage,
+  isUnsupportedMessage,
   linkPreviewHref,
   linkPreviewHost,
   messageDeliveryState,
@@ -172,4 +173,36 @@ test('lets a schema-prefixed WhatsApp link keep its original scheme', () => {
   const tokens = formatMessageText('see https://wa.me/972501234567')
   const link = tokens.find(token => token.type === 'link')
   assert.equal(link.href, 'https://wa.me/972501234567')
+})
+
+test('flags an unsupported message type with no renderable content', () => {
+  assert.equal(isUnsupportedMessage({ type: 'locationMessage' }), true)
+  assert.equal(isUnsupportedMessage({ type: 'orderMessage' }), true)
+  assert.equal(isUnsupportedMessage({ type: 'productMessage' }), true)
+  assert.equal(isUnsupportedMessage({ type: 'groupInviteMessage' }), true)
+  assert.equal(isUnsupportedMessage({ type: 'eventMessage' }), true)
+})
+
+test('does not flag messages with renderable content as unsupported', () => {
+  // Text message
+  assert.equal(isUnsupportedMessage({ type: 'conversation', text: 'hi' }), false)
+  // Media message of an unsupported type still has renderable media
+  assert.equal(isUnsupportedMessage({ type: 'locationMessage', media: { kind: 'image' } }), false)
+  // Interactive message
+  assert.equal(isUnsupportedMessage({ type: 'interactiveMessage', interactiveData: { type: 'interactive' } }), false)
+  // Call message
+  assert.equal(isUnsupportedMessage({ type: 'callMessage', call: { id: '1', status: 'missed', isVideo: false } }), false)
+  // Unknown type with text
+  assert.equal(isUnsupportedMessage({ type: 'unknown', text: 'hi' }), false)
+})
+
+test('deleted messages are never unsupported (they have their own placeholder)', () => {
+  assert.equal(isUnsupportedMessage({ type: 'locationMessage', deleted: true }), false)
+})
+
+test('renders the unsupported placeholder in the chat preview', () => {
+  assert.equal(messagePreview({ type: 'locationMessage' }), 'הודעה לא נתמכת')
+  assert.equal(messagePreview({ type: 'orderMessage' }), 'הודעה לא נתמכת')
+  // A normal text message is not affected
+  assert.equal(messagePreview({ type: 'conversation', text: 'hello' }), 'hello')
 })

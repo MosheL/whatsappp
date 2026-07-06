@@ -12,7 +12,7 @@ import {
   shouldShowMessageStatus, isMyReaction, messageReactions,
   reactionUserKey, formatMessageText,
   mediaKindFromMime, isForwardedMessage, linkPreviewHref, linkPreviewHost, linkPreviewImageStyle,
-  isInteractiveMessage, interactiveTypeLabel
+  isInteractiveMessage, interactiveTypeLabel, isUnsupportedMessage
 } from './message-renderer.js'
 import StatusTick from './StatusTick.vue'
 
@@ -277,6 +277,16 @@ function copyAllText(message) {
   copyTextFallback(text)
 }
 
+function copyInteractiveCode(code) {
+  if (!code) return
+  const text = String(code)
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => copyTextFallback(text))
+  } else {
+    copyTextFallback(text)
+  }
+}
+
 const MESSAGE_WINDOW_SIZE = 80
 const MESSAGE_WINDOW_STEP = 60
 const MESSAGE_ESTIMATED_HEIGHT = 104
@@ -530,7 +540,16 @@ defineExpose({ scrollToBottom, scrollToMessage })
         </div>
         <div v-else-if="!message.deleted && isInteractiveMessage(message)" class="interactive-message">
           <div v-if="message.interactiveData.title" class="interactive-title" dir="auto">{{ message.interactiveData.title }}</div>
-          <div v-if="message.interactiveData.body" class="interactive-body" dir="auto">{{ message.interactiveData.body }}</div>
+          <div v-if="message.interactiveData.body" class="interactive-body" dir="auto">
+            <template v-for="(part, index) in formatMessageText(message.interactiveData.body)" :key="`${message.id}:ibody:${index}`">
+              <a v-if="part.type === 'link'" :class="{ bold: part.bold, strike: part.strike }" :href="part.href" target="_blank" rel="noreferrer">{{ part.text }}</a>
+              <a v-else-if="part.type === 'email'" :class="{ bold: part.bold, strike: part.strike }" :href="part.href" target="_blank" rel="noreferrer">{{ part.text }}</a>
+              <strong v-else-if="part.bold && !part.strike">{{ part.text }}</strong>
+              <strong v-else-if="part.bold && part.strike"><del>{{ part.text }}</del></strong>
+              <del v-else-if="part.strike">{{ part.text }}</del>
+              <span v-else>{{ part.text }}</span>
+            </template>
+          </div>
           <div v-if="message.interactiveData.footer" class="interactive-footer" dir="auto">{{ message.interactiveData.footer }}</div>
           <div v-if="message.interactiveData.buttons?.length" class="interactive-buttons">
             <template v-for="(btn, bi) in message.interactiveData.buttons" :key="bi">
@@ -552,6 +571,15 @@ defineExpose({ scrollToBottom, scrollToMessage })
               >
                 {{ btn.text }}
               </a>
+              <button
+                v-else-if="btn.type === 'copy_code' && btn.code"
+                type="button"
+                class="interactive-button interactive-link"
+                :title="`העתק: ${btn.code}`"
+                @click.stop="copyInteractiveCode(btn.code)"
+              >
+                {{ btn.text }}
+              </button>
               <button
                 v-else
                 type="button"
@@ -598,7 +626,12 @@ defineExpose({ scrollToBottom, scrollToMessage })
             <small dir="ltr">{{ linkPreviewHost(message) }}</small>
           </span>
         </a>
-        <p v-if="!isCallMessage(message) && !isContactMessage(message) && !isInteractiveMessage(message)" class="message-text" dir="auto">
+        <div v-if="!message.deleted && isUnsupportedMessage(message)" class="unsupported-message" dir="auto">
+          <span class="unsupported-icon" aria-hidden="true">⚠️</span>
+          <span class="unsupported-text">הודעה לא נתמכת</span>
+          <small v-if="message.type" class="unsupported-type" dir="ltr">{{ message.type }}</small>
+        </div>
+        <p v-if="!isCallMessage(message) && !isContactMessage(message) && !isInteractiveMessage(message) && !isUnsupportedMessage(message)" class="message-text" dir="auto">
           <template v-for="(part, index) in formatMessageText(message.text || message.type)" :key="`${message.id}:text:${index}`">
             <a v-if="part.type === 'link'" :class="{ bold: part.bold, strike: part.strike }" :href="part.href" target="_blank" rel="noreferrer">{{ part.text }}</a>
             <a v-else-if="part.type === 'email'" :class="{ bold: part.bold, strike: part.strike }" :href="part.href" target="_blank" rel="noreferrer">{{ part.text }}</a>

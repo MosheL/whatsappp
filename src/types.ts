@@ -58,9 +58,13 @@ export type LinkPreviewData = {
 
 export type InteractiveButton = {
   text: string
+  /** Button action type: 'quick_reply' | 'url' | 'call' | 'cta_url' | 'copy_code' | 'flow' | ... */
   type?: string
+  /** Original native-flow button name (e.g. 'cta_url', 'quick_reply', 'copy_code') */
+  name?: string
   url?: string
   phone?: string
+  code?: string
   id?: string
 }
 
