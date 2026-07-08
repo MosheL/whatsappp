@@ -92,7 +92,7 @@ export function messageText(message: WAMessageContent | null | undefined): strin
     return ''
   }
   if (content.buttonsMessage) {
-    return content.buttonsMessage.description || content.buttonsMessage.title || ''
+    return content.buttonsMessage.contentText || content.buttonsMessage.text || ''
   }
   if (content.listMessage) {
     return content.listMessage.description || content.listMessage.title || ''
@@ -366,16 +366,19 @@ export function messageButtonsData(content: any): InteractiveData | undefined {
   if (!content?.buttonsMessage) return undefined
   const bm = content.buttonsMessage
   const buttons: InteractiveButton[] = (bm.buttons || []).map((b: any) => {
-    const text = b.buttonText?.text || ''
+    // RESPONSE buttons carry their label in buttonText.displayText + buttonId.
+    // (Baileys' ButtonText proto field is `displayText`, not `text`.)
+    const text = b.buttonText?.displayText || ''
     const id = b.buttonId || ''
-    // Determine button action type
-    let type = 'quick_reply'
-    let url = ''
-    if (b.nativeFlowInfo?.url) {
-      type = 'url'
-      url = b.nativeFlowInfo.url
+    // NATIVE_FLOW buttons carry their action in nativeFlowInfo (name + paramsJson).
+    if (b.nativeFlowInfo?.name) {
+      const native = nativeFlowButtonData({
+        name: b.nativeFlowInfo.name,
+        buttonParamsJson: b.nativeFlowInfo.paramsJson
+      })
+      if (native) return { ...native, text: text || native.text, id: id || native.id }
     }
-    return { text, type, url, id }
+    return { text, type: 'quick_reply', url: '', id }
   }).filter((b: InteractiveButton) => b.text)
   return {
     type: 'buttons',

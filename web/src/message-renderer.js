@@ -564,6 +564,10 @@ export function messagePreview(message) {
   if (isContactMessage(message)) {
     return hasMultipleContacts(message) ? 'אנשי קשר' : 'איש קשר'
   }
+  if (isInteractiveMessage(message)) {
+    const data = message.interactiveData
+    return data.body || data.title || interactiveTypeLabel(message) || 'הודעה אינטראקטיבית'
+  }
   if (isUnsupportedMessage(message)) return 'הודעה לא נתמכת'
   const text = message.text || message.type || ''
   return renderTokens(formatMessageText(text))

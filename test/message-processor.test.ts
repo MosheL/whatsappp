@@ -107,6 +107,38 @@ test('parses WhatsApp Cloud API cta_url interactive message into a clickable url
   assert.equal(btn?.url, 'https://www.waze.com/ul?ll=32.096334,34.883147&navigate=yes&zoom=17')
 })
 
+test('parses WhatsApp Cloud API interactive button (reply buttons) into display-only buttons', () => {
+  // Cloud API `interactive.type: "button"` with reply buttons arrives via
+  // Baileys as a buttonsMessage. The button label lives in
+  // buttonText.displayText (ButtonText proto field 1), the body in contentText,
+  // the footer in footerText, and the header text in `text`.
+  const content: any = {
+    buttonsMessage: {
+      text: 'כותרת',
+      contentText: '*שלום נהג!\nמנוי בתוקף עד 27/07/2026*',
+      footerText: 'כמ-אל | שום קש לא ישבור אותך',
+      buttons: [
+        { buttonId: 'Instructions', buttonText: { displayText: '📖 הוראות שימוש' }, type: 1 },
+        { buttonId: 'BuySubscription', buttonText: { displayText: '💳 רכישת מנוי' }, type: 1 }
+      ]
+    }
+  }
+
+  const data = messageInteractiveData(content)
+  assert.equal(data?.type, 'buttons')
+  assert.equal(data?.title, 'כותרת')
+  assert.equal(data?.body, '*שלום נהג!\nמנוי בתוקף עד 27/07/2026*')
+  assert.equal(data?.footer, 'כמ-אל | שום קש לא ישבור אותך')
+  assert.equal(data?.buttons?.length, 2)
+  assert.equal(data?.buttons?.[0]?.text, '📖 הוראות שימוש')
+  assert.equal(data?.buttons?.[0]?.id, 'Instructions')
+  assert.equal(data?.buttons?.[0]?.type, 'quick_reply')
+  assert.equal(data?.buttons?.[1]?.text, '💳 רכישת מנוי')
+  assert.equal(data?.buttons?.[1]?.id, 'BuySubscription')
+  // Body text is extracted for the chat-list preview (no more empty / unsupported fallback)
+  assert.equal(messageText(content), '*שלום נהג!\nמנוי בתוקף עד 27/07/2026*')
+})
+
 test('parses native-flow call_action and copy_code buttons', () => {
   const content: any = {
     interactiveMessage: {

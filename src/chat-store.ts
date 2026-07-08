@@ -107,10 +107,10 @@ export class ChatStore {
     const msgTs = message.timestamp || 0
     const chatTs = chat.timestamp || 0
     if (msgTs < chatTs - 10000) return
-    const displayable = Boolean(message.text || message.media || message.contact)
+    const displayable = Boolean(message.text || message.media || message.contact || message.interactiveData || message.call || message.linkPreview)
     chat.lastMessage = message.deleted
       ? 'הודעה נמחקה'
-      : message.text || (message.viewOnce ? '' : message.contact ? (message.contact.contacts?.length ? 'אנשי קשר' : 'איש קשר') : message.media?.kind === 'image' ? 'תמונה' : message.media?.kind === 'video' ? 'וידאו' : message.media?.kind === 'document' ? 'קובץ' : message.type)
+      : message.text || (message.viewOnce ? '' : message.contact ? (message.contact.contacts?.length ? 'אנשי קשר' : 'איש קשר') : message.media?.kind === 'image' ? 'תמונה' : message.media?.kind === 'video' ? 'וידאו' : message.media?.kind === 'document' ? 'קובץ' : message.interactiveData ? (message.interactiveData.body || message.interactiveData.title || 'הודעה אינטראקטיבית') : message.type)
     chat.lastMessageFromMe = message.fromMe
     chat.lastMessageStatus = message.status
     chat.lastMessageReceipt = message.receipt
