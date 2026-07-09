@@ -96,6 +96,16 @@ export type GroupMention = {
   phoneNumber: string
 }
 
+export type LocationData = {
+  latitude: number
+  longitude: number
+  name?: string
+  address?: string
+  url?: string
+  isLive?: boolean
+  comment?: string
+}
+
 export type UiMessage = {
   id: string
   jid: string
@@ -115,6 +125,7 @@ export type UiMessage = {
   media?: MediaData
   linkPreview?: LinkPreviewData
   interactiveData?: InteractiveData
+  location?: LocationData
   viewOnce?: boolean
   viewOnceType?: string
   forwarded?: boolean

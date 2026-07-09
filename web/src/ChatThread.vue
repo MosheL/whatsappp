@@ -12,7 +12,7 @@ import {
   shouldShowMessageStatus, isMyReaction, messageReactions,
   reactionUserKey, formatMessageText,
   mediaKindFromMime, isForwardedMessage, linkPreviewHref, linkPreviewHost, linkPreviewImageStyle,
-  isInteractiveMessage, interactiveTypeLabel, isUnsupportedMessage
+  isInteractiveMessage, isLocationMessage, interactiveTypeLabel, isUnsupportedMessage
 } from './message-renderer.js'
 import StatusTick from './StatusTick.vue'
 
@@ -537,6 +537,37 @@ defineExpose({ scrollToBottom, scrollToMessage })
             title="פתח שיחה"
             @click.stop="emit('select-chat', contactPhone(message), contactDisplayName(message))"
           >&#128172;</button>
+        </div>
+        <div v-else-if="!message.deleted && isLocationMessage(message)" class="location-message">
+          <div v-if="message.location.name" class="location-name" dir="auto">{{ message.location.name }}</div>
+          <div v-if="message.location.address" class="location-address" dir="auto">{{ message.location.address }}</div>
+          <div v-if="message.location.comment" class="location-comment" dir="auto">{{ message.location.comment }}</div>
+          <iframe
+            class="location-map"
+            :src="`https://www.openstreetmap.org/export/embed.html?bbox=${message.location.longitude - 0.01}%2C${message.location.latitude - 0.01}%2C${message.location.longitude + 0.01}%2C${message.location.latitude + 0.01}&amp;layer=mapnik&amp;marker=${message.location.latitude}%2C${message.location.longitude}`"
+            width="100%"
+            height="200"
+            style="border:0;border-radius:8px;"
+            loading="lazy"
+            referrerpolicy="no-referrer"
+          ></iframe>
+          <a
+            v-if="message.location.url"
+            :href="message.location.url"
+            target="_blank"
+            rel="noreferrer"
+            class="location-url"
+          >
+            {{ message.location.url }}
+          </a>
+          <a
+            :href="`https://www.openstreetmap.org/?mlat=${message.location.latitude}&amp;mlon=${message.location.longitude}`"
+            target="_blank"
+            rel="noreferrer"
+            class="location-open-link"
+          >
+            פתח מפה
+          </a>
         </div>
         <div v-else-if="!message.deleted && isInteractiveMessage(message)" class="interactive-message">
           <div v-if="message.interactiveData.title" class="interactive-title" dir="auto">{{ message.interactiveData.title }}</div>

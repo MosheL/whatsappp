@@ -490,6 +490,13 @@ export function isInteractiveMessage(message) {
 }
 
 /**
+ * Whether a message is a location message (OpenStreetMap rendering).
+ */
+export function isLocationMessage(message) {
+  return message?.type === 'locationMessage' || message?.type === 'liveLocationMessage' || Boolean(message?.location)
+}
+
+/**
  * Get the interactive type label for display.
  */
 export function interactiveTypeLabel(message) {
@@ -525,6 +532,8 @@ const SUPPORTED_MESSAGE_TYPES = new Set([
   'callMessage',
   'callLogMesssage',
   'callLogMessage',
+  'locationMessage',
+  'liveLocationMessage',
   'unknown'
 ])
 
@@ -539,7 +548,8 @@ function hasRenderableContent(message) {
     message?.interactiveData ||
     message?.call ||
     message?.viewOnce ||
-    message?.linkPreview
+    message?.linkPreview ||
+    message?.location
   )
 }
 
@@ -567,6 +577,10 @@ export function messagePreview(message) {
   if (isInteractiveMessage(message)) {
     const data = message.interactiveData
     return data.body || data.title || interactiveTypeLabel(message) || 'הודעה אינטראקטיבית'
+  }
+  if (isLocationMessage(message)) {
+    const loc = message.location
+    return loc?.name ? `מיקום: ${loc.name}` : 'מיקום'
   }
   if (isUnsupportedMessage(message)) return 'הודעה לא נתמכת'
   const text = message.text || message.type || ''

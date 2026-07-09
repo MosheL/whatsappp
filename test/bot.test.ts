@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { Bot, linkPreviewUrlFromText } from '../src/bot.ts'
+import { messageLocation } from '../src/message-processor.ts'
 
 test('marks dragged media as forwarded and preserves audio media kind', async () => {
   let sentContent: any
@@ -600,4 +601,170 @@ test('purges all in-memory account data on unlink', async () => {
   assert.equal(fakeBot.qr, '')
   assert.equal(fakeBot.state.creds.oldAccountValue, undefined)
   assert.ok(fakeBot.state.creds.noiseKey)
+})
+
+test('extracts location data when recording a locationMessage via recordBaileysMessage', () => {
+  const recorded: any[] = []
+  const fakeBot: any = {
+    sock: { presenceSubscribe: async () => {} },
+    authKey: 'auth',
+    contactCache: {
+      canonicalJid: (jid: string) => jid,
+      senderDisplayName: () => 'Sender',
+      participantPhone: () => '',
+      isOwnJid: () => false,
+      isOwnMessage: () => false,
+      messageRemoteJid: (msg: any) => msg.key.remoteJid,
+      ensureChatMeta: async () => ({ jid: 'user@s.whatsapp.net', timestamp: 0, lastSeen: 0 } as any)
+    },
+    messageStore: {
+      get: () => [],
+      set: () => {},
+      persistMedia: async () => {}
+    },
+    events: { emit: () => {} },
+    chatStore: { callStatusText: (s: string) => s, persistChat: () => {} },
+    trimChatCache: () => {},
+    messages: new Map(),
+    chats: new Map(),
+    callPeers: new Map(),
+    reactionMessagePatch: () => undefined,
+    deletedMessagePatch: () => undefined,
+    editedMessagePatch: () => undefined,
+    secretEncryptedMessagePatch: () => undefined,
+    recordUiMessage: (message: any) => recorded.push(message),
+    quotedFromIncomingMessage: () => undefined
+  }
+
+  Bot.prototype.recordBaileysMessage.call(fakeBot, {
+    key: { id: 'loc-msg-1', remoteJid: 'user@s.whatsapp.net' },
+    message: {
+      locationMessage: {
+        degreesLatitude: 32.0853,
+        degreesLongitude: 34.7818,
+        name: 'Azrieli Center',
+        address: 'Tel Aviv'
+      }
+    },
+    messageTimestamp: 1700000000
+  })
+
+  assert.equal(recorded.length, 1)
+  const msg = recorded[0]
+  assert.equal(msg.type, 'locationMessage')
+  assert.ok(msg.location)
+  assert.equal(msg.location.latitude, 32.0853)
+  assert.equal(msg.location.longitude, 34.7818)
+  assert.equal(msg.location.name, 'Azrieli Center')
+  assert.equal(msg.location.address, 'Tel Aviv')
+  // Verify the same location is extracted by messageLocation directly
+  const extracted = messageLocation({
+    locationMessage: {
+      degreesLatitude: 32.0853,
+      degreesLongitude: 34.7818,
+      name: 'Azrieli Center',
+      address: 'Tel Aviv'
+    }
+  })
+  assert.deepEqual(extracted, msg.location)
+})
+
+test('records a liveLocationMessage with comment and URL', () => {
+  const recorded: any[] = []
+  const fakeBot: any = {
+    sock: { presenceSubscribe: async () => {} },
+    authKey: 'auth',
+    contactCache: {
+      canonicalJid: (jid: string) => jid,
+      senderDisplayName: () => 'Sender',
+      participantPhone: () => '',
+      isOwnJid: () => false,
+      isOwnMessage: () => false,
+      messageRemoteJid: (msg: any) => msg.key.remoteJid,
+      ensureChatMeta: async () => ({ jid: 'user@s.whatsapp.net', timestamp: 0, lastSeen: 0 } as any)
+    },
+    messageStore: {
+      get: () => [],
+      set: () => {},
+      persistMedia: async () => {}
+    },
+    events: { emit: () => {} },
+    chatStore: { callStatusText: (s: string) => s, persistChat: () => {} },
+    trimChatCache: () => {},
+    messages: new Map(),
+    chats: new Map(),
+    callPeers: new Map(),
+    reactionMessagePatch: () => undefined,
+    deletedMessagePatch: () => undefined,
+    editedMessagePatch: () => undefined,
+    secretEncryptedMessagePatch: () => undefined,
+    recordUiMessage: (message: any) => recorded.push(message),
+    quotedFromIncomingMessage: () => undefined
+  }
+
+  Bot.prototype.recordBaileysMessage.call(fakeBot, {
+    key: { id: 'live-loc-1', remoteJid: 'user@s.whatsapp.net' },
+    message: {
+      locationMessage: {
+        degreesLatitude: 31.0461,
+        degreesLongitude: 34.8516,
+        name: 'Beer Sheva',
+        isLive: true,
+        comment: 'I am here!',
+        url: 'https://maps.example.com/live'
+      }
+    },
+    messageTimestamp: 1700000001
+  })
+
+  assert.equal(recorded.length, 1)
+  const msg = recorded[0]
+  assert.equal(msg.type, 'locationMessage')
+  assert.ok(msg.location)
+  assert.equal(msg.location.isLive, true)
+  assert.equal(msg.location.comment, 'I am here!')
+  assert.equal(msg.location.url, 'https://maps.example.com/live')
+})
+
+test('does not extract location for non-location messages', () => {
+  const recorded: any[] = []
+  const fakeBot: any = {
+    sock: { presenceSubscribe: async () => {} },
+    authKey: 'auth',
+    contactCache: {
+      canonicalJid: (jid: string) => jid,
+      senderDisplayName: () => 'Sender',
+      participantPhone: () => '',
+      isOwnJid: () => false,
+      isOwnMessage: () => false,
+      messageRemoteJid: (msg: any) => msg.key.remoteJid,
+      ensureChatMeta: async () => ({ jid: 'user@s.whatsapp.net', timestamp: 0, lastSeen: 0 } as any)
+    },
+    messageStore: {
+      get: () => [],
+      set: () => {},
+      persistMedia: async () => {}
+    },
+    events: { emit: () => {} },
+    chatStore: { callStatusText: (s: string) => s, persistChat: () => {} },
+    trimChatCache: () => {},
+    messages: new Map(),
+    chats: new Map(),
+    callPeers: new Map(),
+    reactionMessagePatch: () => undefined,
+    deletedMessagePatch: () => undefined,
+    editedMessagePatch: () => undefined,
+    secretEncryptedMessagePatch: () => undefined,
+    recordUiMessage: (message: any) => recorded.push(message),
+    quotedFromIncomingMessage: () => undefined
+  }
+
+  Bot.prototype.recordBaileysMessage.call(fakeBot, {
+    key: { id: 'text-1', remoteJid: 'user@s.whatsapp.net' },
+    message: { conversation: 'hello' },
+    messageTimestamp: 1700000002
+  })
+
+  assert.equal(recorded.length, 1)
+  assert.equal(recorded[0].location, undefined)
 })

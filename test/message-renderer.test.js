@@ -5,6 +5,7 @@ import {
   formatMessageText,
   hasLinkCandidate,
   isForwardedMessage,
+  isLocationMessage,
   isUnsupportedMessage,
   linkPreviewHref,
   linkPreviewHost,
@@ -176,7 +177,6 @@ test('lets a schema-prefixed WhatsApp link keep its original scheme', () => {
 })
 
 test('flags an unsupported message type with no renderable content', () => {
-  assert.equal(isUnsupportedMessage({ type: 'locationMessage' }), true)
   assert.equal(isUnsupportedMessage({ type: 'orderMessage' }), true)
   assert.equal(isUnsupportedMessage({ type: 'productMessage' }), true)
   assert.equal(isUnsupportedMessage({ type: 'groupInviteMessage' }), true)
@@ -201,8 +201,44 @@ test('deleted messages are never unsupported (they have their own placeholder)',
 })
 
 test('renders the unsupported placeholder in the chat preview', () => {
-  assert.equal(messagePreview({ type: 'locationMessage' }), 'הודעה לא נתמכת')
   assert.equal(messagePreview({ type: 'orderMessage' }), 'הודעה לא נתמכת')
+  // locationMessage is now a supported type — renders as 'מיקום'
+  assert.equal(messagePreview({ type: 'locationMessage' }), 'מיקום')
   // A normal text message is not affected
   assert.equal(messagePreview({ type: 'conversation', text: 'hello' }), 'hello')
+})
+
+test('isLocationMessage detects locationMessage type', () => {
+  assert.equal(isLocationMessage({ type: 'locationMessage' }), true)
+  assert.equal(isLocationMessage({ type: 'liveLocationMessage' }), true)
+  assert.equal(isLocationMessage({ type: 'conversation' }), false)
+})
+
+test('isLocationMessage detects location data even without the type field', () => {
+  assert.equal(isLocationMessage({ location: { latitude: 32, longitude: 34 } }), true)
+  assert.equal(isLocationMessage({}), false)
+})
+
+test('messagePreview shows location name when available', () => {
+  const preview = messagePreview({
+    type: 'locationMessage',
+    location: { latitude: 32.0853, longitude: 34.7818, name: 'Azrieli Center' }
+  })
+  assert.equal(preview, 'מיקום: Azrieli Center')
+})
+
+test('messagePreview shows generic label when location has no name', () => {
+  const preview = messagePreview({
+    type: 'locationMessage',
+    location: { latitude: 32.0853, longitude: 34.7818 }
+  })
+  assert.equal(preview, 'מיקום')
+})
+
+test('location message is not flagged as unsupported', () => {
+  assert.equal(isUnsupportedMessage({ type: 'locationMessage', location: { latitude: 32, longitude: 34 } }), false)
+})
+
+test('location message without location data is still supported (known type)', () => {
+  assert.equal(isUnsupportedMessage({ type: 'locationMessage' }), false)
 })

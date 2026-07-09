@@ -1,5 +1,5 @@
 import type { WAMessage, WAMessageContent } from '@whiskeysockets/baileys/lib/Types/Message.js'
-import type { MediaData, LinkPreviewData, ContactData, QuotedMessage, CallData, MessagePatch } from './types.ts'
+import type { MediaData, LinkPreviewData, ContactData, LocationData, QuotedMessage, CallData, MessagePatch } from './types.ts'
 import { displayPhoneForJidLike } from './contact-cache.ts'
 
 // -------- Timestamp normalization --------
@@ -289,6 +289,26 @@ export function messageLinkPreview(message: WAMessageContent | null | undefined)
     thumbnail: jpegThumbnailDataUrl(preview?.jpegThumbnail) || undefined,
     thumbnailWidth: Number(preview?.thumbnailWidth || 0) || undefined,
     thumbnailHeight: Number(preview?.thumbnailHeight || 0) || undefined
+  }
+}
+
+// -------- Location --------
+
+export function messageLocation(message: WAMessageContent | null | undefined): LocationData | undefined {
+  const content = getMessageContent(message)
+  const loc = content?.locationMessage
+  if (!loc) return undefined
+  const lat = Number(loc.degreesLatitude || 0)
+  const lng = Number(loc.degreesLongitude || 0)
+  if (!lat && !lng) return undefined
+  return {
+    latitude: lat,
+    longitude: lng,
+    name: loc.name || undefined,
+    address: loc.address || undefined,
+    url: loc.url || undefined,
+    isLive: loc.isLive || undefined,
+    comment: loc.comment || undefined
   }
 }
 
@@ -664,6 +684,8 @@ const SUPPORTED_MESSAGE_TYPES = new Set([
   'callMessage',
   'callLogMesssage',
   'callLogMessage',
+  'locationMessage',
+  'liveLocationMessage',
   'unknown' // text-only / stub messages handled by the text path
 ])
 

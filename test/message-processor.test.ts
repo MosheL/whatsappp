@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { isForwardedMessage, isSupportedMessageType, messageLinkPreview, messagePatchFromContent, messageText, messageType, messageInteractiveData, quotedFromIncomingMessage, unwrapMessageForMedia } from '../src/message-processor.ts'
+import { isForwardedMessage, isSupportedMessageType, messageLinkPreview, messagePatchFromContent, messageText, messageType, messageInteractiveData, messageLocation, quotedFromIncomingMessage, unwrapMessageForMedia } from '../src/message-processor.ts'
 
 test('detects and preserves forwarded message metadata', () => {
   const content: any = {
@@ -206,10 +206,102 @@ test('isSupportedMessageType flags known renderable types and rejects unknown on
   assert.equal(isSupportedMessageType('imageMessage'), true)
   assert.equal(isSupportedMessageType('interactiveResponseMessage'), true)
   assert.equal(isSupportedMessageType('unknown'), true)
+  // Supported location message types
+  assert.equal(isSupportedMessageType('locationMessage'), true)
+  assert.equal(isSupportedMessageType('liveLocationMessage'), true)
   // Unsupported message types the UI has no dedicated renderer for
-  assert.equal(isSupportedMessageType('locationMessage'), false)
   assert.equal(isSupportedMessageType('orderMessage'), false)
   assert.equal(isSupportedMessageType('productMessage'), false)
   assert.equal(isSupportedMessageType('groupInviteMessage'), false)
   assert.equal(isSupportedMessageType('eventMessage'), false)
+})
+
+test('extracts basic location data from a locationMessage', () => {
+  const loc = messageLocation({
+    locationMessage: {
+      degreesLatitude: 32.0853,
+      degreesLongitude: 34.7818,
+      name: 'Azrieli Center',
+      address: 'Tel Aviv, Israel'
+    }
+  })
+
+  assert.equal(loc?.latitude, 32.0853)
+  assert.equal(loc?.longitude, 34.7818)
+  assert.equal(loc?.name, 'Azrieli Center')
+  assert.equal(loc?.address, 'Tel Aviv, Israel')
+})
+
+test('extracts live location with comment and URL', () => {
+  const loc = messageLocation({
+    locationMessage: {
+      degreesLatitude: 31.0461,
+      degreesLongitude: 34.8516,
+      name: 'Beer Sheva',
+      isLive: true,
+      comment: 'I am here!',
+      url: 'https://maps.example.com/location'
+    }
+  })
+
+  assert.equal(loc?.latitude, 31.0461)
+  assert.equal(loc?.longitude, 34.8516)
+  assert.equal(loc?.name, 'Beer Sheva')
+  assert.equal(loc?.isLive, true)
+  assert.equal(loc?.comment, 'I am here!')
+  assert.equal(loc?.url, 'https://maps.example.com/location')
+})
+
+test('returns undefined for messages without location content', () => {
+  assert.equal(messageLocation({}), undefined)
+  assert.equal(messageLocation(null), undefined)
+  assert.equal(messageLocation(undefined), undefined)
+  assert.equal(messageLocation({ conversation: 'hello' }), undefined)
+})
+
+test('returns undefined when both coordinates are zero (no valid location)', () => {
+  const loc = messageLocation({
+    locationMessage: {
+      degreesLatitude: 0,
+      degreesLongitude: 0,
+      name: 'Nowhere'
+    }
+  })
+  assert.equal(loc, undefined)
+})
+
+test('handles location message wrapped in ephemeral message', () => {
+  const loc = messageLocation({
+    ephemeralMessage: {
+      message: {
+        locationMessage: {
+          degreesLatitude: 32.0693,
+          degreesLongitude: 34.7885,
+          name: 'Sarona'
+        }
+      }
+    }
+  })
+
+  assert.equal(loc?.latitude, 32.0693)
+  assert.equal(loc?.longitude, 34.7885)
+  assert.equal(loc?.name, 'Sarona')
+})
+
+test('handles location message wrapped in view-once message', () => {
+  const loc = messageLocation({
+    viewOnceMessage: {
+      message: {
+        locationMessage: {
+          degreesLatitude: 32.1093,
+          degreesLongitude: 34.8647,
+          name: 'Petah Tikva'
+        }
+      }
+    }
+  })
+
+  assert.equal(loc?.latitude, 32.1093)
+  assert.equal(loc?.longitude, 34.8647)
+  assert.equal(loc?.name, 'Petah Tikva')
 })

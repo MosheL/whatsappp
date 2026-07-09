@@ -43,6 +43,7 @@ import {
   messageMedia,
   messageContact,
   messageLinkPreview,
+  messageLocation,
   messageContext,
   isForwardedMessage,
   callInfoFromMessage,
@@ -981,7 +982,7 @@ export class Bot {
     item = { ...item, jid: this.contactCache.canonicalJid(sourceJid) }
     if (sourceJid !== item.jid) this.contactCache.mergeChatJid(sourceJid, item.jid)
     item.key = { remoteJid: item.jid, ...(item.key || {}) }
-    const displayable = Boolean(item.text || item.media || item.contact || item.interactiveData || item.call || item.linkPreview) && !isTransportMessage(item.type)
+    const displayable = Boolean(item.text || item.media || item.contact || item.interactiveData || item.call || item.linkPreview || item.location) && !isTransportMessage(item.type)
     const messages = this.messages.get(item.jid) || []
     const existingIndex = messages.findIndex(message => message.id === item.id)
     const isNew = existingIndex < 0
@@ -1009,7 +1010,7 @@ export class Bot {
       const messageData = currentMessage || storedMessage
       console.log('📥 recordUiMessage callback:', 'found currentMessage:', Boolean(currentMessage), 'messageData.status:', messageData.status, 'chat.lastMessageStatus before:', chat.lastMessageStatus)
       if (displayable && isLatestKnown) {
-        chat.lastMessage = messageData.text || (messageData.viewOnce ? viewOnceLabel(messageData.viewOnceType) : messageData.contact ? (messageData.contact.contacts?.length ? 'אנשי קשר' : 'איש קשר') : messageData.media?.kind === 'image' ? 'תמונה' : messageData.media?.kind === 'video' ? 'וידאו' : messageData.media?.kind === 'document' ? 'קובץ' : messageData.interactiveData ? (messageData.interactiveData.body || messageData.interactiveData.title || 'הודעה אינטראקטיבית') : isSupportedMessageType(messageData.type) ? messageData.type : 'הודעה לא נתמכת')
+        chat.lastMessage = messageData.text || (messageData.viewOnce ? viewOnceLabel(messageData.viewOnceType) : messageData.contact ? (messageData.contact.contacts?.length ? 'אנשי קשר' : 'איש קשר') : messageData.media?.kind === 'image' ? 'תמונה' : messageData.media?.kind === 'video' ? 'וידאו' : messageData.media?.kind === 'document' ? 'קובץ' : messageData.interactiveData ? (messageData.interactiveData.body || messageData.interactiveData.title || 'הודעה אינטראקטיבית') : messageData.location ? (messageData.location.name || 'מיקום') : isSupportedMessageType(messageData.type) ? messageData.type : 'הודעה לא נתמכת')
         chat.lastMessageFromMe = messageData.fromMe
         // Only overwrite status/receipt if the incoming data has meaningful values.
         // Incoming messages often have undefined status, which would erase the
@@ -1024,6 +1025,13 @@ export class Bot {
           chat.lastMessageUserReceipt = messageData.userReceipt
         }
         chat.timestamp = itemTimestamp
+      }
+      // Reflect the sender's last activity for incoming messages. Presence-based
+      // lastSeen is absent for business/bot accounts and stale while a contact
+      // is online; a fresh incoming message is a reliable activity signal, so
+      // advance lastSeen to the message time (never move it backwards).
+      if (displayable && !messageData.fromMe && itemTimestamp > (chat.lastSeen || 0)) {
+        chat.lastSeen = itemTimestamp
       }
       if (displayable && options.countUnread && isNew) chat.unread = messageData.fromMe ? chat.unread : chat.unread + 1
       this.persistChat(chat)
@@ -1108,6 +1116,7 @@ export class Bot {
       }
     }
     const linkPreview = messageLinkPreview(msg.message)
+    const location = messageLocation(msg.message)
     const viewOnce = isViewOnceBaileysMessage(msg)
     const viewOnceType = media?.kind || viewOnceKindFromType(type)
     // Resolve @mentions in text: replace LID/phone placeholders with @[phone|name] format
@@ -1155,6 +1164,7 @@ export class Bot {
       text: displayText,
       type,
       interactiveData: messageInteractiveData(msg.message),
+      location,
       status: msg.status,
       timestamp: normalizeTimestamp(msg.messageTimestamp)
     }, options)
