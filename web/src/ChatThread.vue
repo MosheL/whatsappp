@@ -335,9 +335,34 @@ async function expandMessageWindow() {
   expandingMessageWindow = false
 }
 
+// Distance from the bottom (in pixels) at which we still consider the user
+// to be "at the bottom" and auto-scroll on new messages. Anything beyond this
+// keeps the scroll position and surfaces a "scroll down" button instead.
+const STICK_TO_BOTTOM_THRESHOLD = 120
+// When new messages pile up while the user is scrolled up, this ref tracks the
+// unread count for the floating "scroll down" indicator.
+const newMessageCount = ref(0)
+// True when the user is currently within `STICK_TO_BOTTOM_THRESHOLD` of the
+// bottom edge. Used to decide whether new messages should auto-scroll or be
+// counted as pending. Starts true so the initial render behaves as "at bottom".
+const isNearBottom = ref(true)
+
+function updateNearBottom() {
+  const el = threadEl.value
+  if (!el) return
+  const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+  isNearBottom.value = distance <= STICK_TO_BOTTOM_THRESHOLD
+  // If the user manually scrolled back to the bottom, the pending counter
+  // becomes irrelevant — clear it.
+  if (isNearBottom.value && newMessageCount.value > 0) {
+    newMessageCount.value = 0
+  }
+}
+
 function handleThreadScroll() {
   const el = threadEl.value
   if (!el) return
+  updateNearBottom()
   if (messageWindowStart.value > 0 && el.scrollTop <= messageTopSpacerHeight.value + el.clientHeight) expandMessageWindow()
 }
 
@@ -345,11 +370,35 @@ function toggleMessageMenu(event, message) {
   emit('toggle-message-menu', message)
 }
 
+// Conditional scroll: only actually moves to the bottom when the user is
+// already near the bottom. Otherwise the user stays put and we bump the
+// "new messages" counter so a floating button can offer to jump down.
 function scrollToBottom() {
+  if (!isNearBottom.value) {
+    newMessageCount.value += 1
+    return
+  }
+  performScrollToBottom()
+  newMessageCount.value = 0
+}
+
+// Unconditional scroll: always jumps to the bottom and resets the counter.
+// Used by chat-switching, initial loads and the "scroll down" button.
+function forceScrollToBottom() {
+  performScrollToBottom()
+  newMessageCount.value = 0
+  isNearBottom.value = true
+}
+
+function performScrollToBottom() {
   nextTick(() => {
     messageWindowStart.value = Math.max(0, props.messages.length - MESSAGE_WINDOW_SIZE)
     nextTick(() => {
-      if (threadEl.value) threadEl.value.scrollTop = threadEl.value.scrollHeight
+      const el = threadEl.value
+      if (!el) return
+      // Smooth scrolling feels jarring when the user explicitly asked to jump
+      // to the bottom (e.g. after sending), so we use 'auto' there.
+      el.scrollTo({ top: el.scrollHeight, behavior: 'auto' })
     })
   })
 }
@@ -368,7 +417,21 @@ function scrollToMessage(id) {
   })
 }
 
-defineExpose({ scrollToBottom, scrollToMessage })
+// Reset per-chat state when the active chat changes: pending counter and
+// sticky-to-bottom flag should not leak between conversations.
+watch(() => props.selectedChat, () => {
+  newMessageCount.value = 0
+  isNearBottom.value = true
+})
+
+// Hide the floating button whenever the thread is being repopulated from
+// scratch (loading older history) so it doesn't dangle during the brief
+// window where there are no messages.
+watch(() => props.loadingMessages, (loading) => {
+  if (loading) newMessageCount.value = 0
+})
+
+defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
 </script>
 
 <template>
@@ -399,6 +462,21 @@ defineExpose({ scrollToBottom, scrollToMessage })
     </section>
     <button v-if="selectedChat && !loadingMessages" class="older-button" type="button" :disabled="loadingOlder" @click="emit('load-older')">
       {{ loadingOlder ? 'מוריד מהטלפון...' : 'הורד הודעות מהטלפון' }}
+    </button>
+    <!-- Floating "scroll to latest" indicator. Visible only when the user has
+         scrolled away from the bottom and there are pending new messages to
+         catch up on. Sticky positioning keeps it pinned regardless of the
+         virtualized message window's apparent scroll position. -->
+    <button
+      v-if="selectedChat && !loadingMessages && newMessageCount > 0"
+      type="button"
+      class="scroll-down"
+      :data-count="newMessageCount > 9 ? '9+' : String(newMessageCount)"
+      :title="`${newMessageCount} הודעות חדשות`"
+      :aria-label="`גלול ל-${newMessageCount} הודעות חדשות`"
+      @click="forceScrollToBottom"
+    >
+      <span class="scroll-down-icon" aria-hidden="true">&#x25BC;</span>
     </button>
     <div
       v-if="!loadingMessages && messageTopSpacerHeight"

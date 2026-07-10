@@ -619,7 +619,9 @@ async function selectChat(jid, contactName) {
   } finally {
     if (selectedBot.value === requestedBot && selectedChat.value === requestedJid && requestId === messageLoadRequest) {
       loadingMessages.value = false
-      scrollToBottom()
+      // Chat just opened — always jump to the latest message regardless of
+      // where the previous chat left the scroll position.
+      forceScrollToBottom()
     }
   }
   if (currentChat.value?.isGroup) loadGroupParticipants(requestedBot, requestedJid)
@@ -763,7 +765,8 @@ async function loadOlderMessages() {
     if (synced.messages?.length) {
       const known = new Set(messages.value.map(message => message.id))
       messages.value = [...synced.messages.filter(message => !known.has(message.id)), ...messages.value]
-      if (!oldest) scrollToBottom()
+      // Initial sync (no prior messages) — always jump to latest.
+      if (!oldest) forceScrollToBottom()
       return
     }
     const deadline = Date.now() + 120000
@@ -775,7 +778,8 @@ async function loadOlderMessages() {
       if (data.messages?.length) {
         const known = new Set(messages.value.map(message => message.id))
         messages.value = [...data.messages.filter(message => !known.has(message.id)), ...messages.value]
-        if (!oldest) scrollToBottom()
+        // Initial sync (no prior messages) — always jump to latest.
+        if (!oldest) forceScrollToBottom()
         return
       }
     }
@@ -1333,6 +1337,14 @@ function clearFile() {
 function scrollToBottom() {
   nextTick(() => {
     if (threadRef.value) threadRef.value.scrollToBottom()
+  })
+}
+
+// Force a jump to the latest message ignoring the user's current scroll
+// position. Used when opening a chat or for the initial message sync.
+function forceScrollToBottom() {
+  nextTick(() => {
+    if (threadRef.value) threadRef.value.forceScrollToBottom()
   })
 }
 
