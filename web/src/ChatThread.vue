@@ -605,7 +605,7 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
             <strong class="contact-name" dir="auto">{{ contactDisplayName(message) }}</strong>
             <small v-if="contactPhone(message)" class="contact-phone" dir="ltr">{{ contactPhone(message) }}</small>
             <template v-if="hasMultipleContacts(message)">
-              <small class="contact-count">ועוד {{ message.contact.contacts.length - 1 }} אנשי קשר</small>
+              <small class="contact-count">ועוד {{ (message.contact?.contacts?.length || 1) - 1 }} אנשי קשר</small>
             </template>
           </div>
           <button
@@ -616,19 +616,34 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
             @click.stop="emit('select-chat', contactPhone(message), contactDisplayName(message))"
           >&#128172;</button>
         </div>
-        <div v-else-if="!message.deleted && isLocationMessage(message)" class="location-message">
+        <!-- Location block. Guarded because old messages persisted before
+             validation may have `type: 'locationMessage'` with no actual
+             location payload (or with malformed coordinates), which would
+             throw `Cannot read properties of undefined (reading 'name')`
+             during render. -->
+        <div v-else-if="!message.deleted && isLocationMessage(message) && message.location" class="location-message">
           <div v-if="message.location.name" class="location-name" dir="auto">{{ message.location.name }}</div>
           <div v-if="message.location.address" class="location-address" dir="auto">{{ message.location.address }}</div>
           <div v-if="message.location.comment" class="location-comment" dir="auto">{{ message.location.comment }}</div>
-          <iframe
-            class="location-map"
-            :src="`https://www.openstreetmap.org/export/embed.html?bbox=${message.location.longitude - 0.01}%2C${message.location.latitude - 0.01}%2C${message.location.longitude + 0.01}%2C${message.location.latitude + 0.01}&amp;layer=mapnik&amp;marker=${message.location.latitude}%2C${message.location.longitude}`"
-            width="100%"
-            height="200"
-            style="border:0;border-radius:8px;"
-            loading="lazy"
-            referrerpolicy="no-referrer"
-          ></iframe>
+          <template v-if="Number.isFinite(message.location.latitude) && Number.isFinite(message.location.longitude)">
+            <iframe
+              class="location-map"
+              :src="`https://www.openstreetmap.org/export/embed.html?bbox=${message.location.longitude - 0.01}%2C${message.location.latitude - 0.01}%2C${message.location.longitude + 0.01}%2C${message.location.latitude + 0.01}&amp;layer=mapnik&amp;marker=${message.location.latitude}%2C${message.location.longitude}`"
+              width="100%"
+              height="200"
+              style="border:0;border-radius:8px;"
+              loading="lazy"
+              referrerpolicy="no-referrer"
+            ></iframe>
+            <a
+              :href="`https://www.openstreetmap.org/?mlat=${message.location.latitude}&amp;mlon=${message.location.longitude}`"
+              target="_blank"
+              rel="noreferrer"
+              class="location-open-link"
+            >
+              פתח מפה
+            </a>
+          </template>
           <a
             v-if="message.location.url"
             :href="message.location.url"
@@ -638,16 +653,14 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
           >
             {{ message.location.url }}
           </a>
-          <a
-            :href="`https://www.openstreetmap.org/?mlat=${message.location.latitude}&amp;mlon=${message.location.longitude}`"
-            target="_blank"
-            rel="noreferrer"
-            class="location-open-link"
-          >
-            פתח מפה
-          </a>
         </div>
-        <div v-else-if="!message.deleted && isInteractiveMessage(message)" class="interactive-message">
+        <!-- Fallback for legacy location messages whose payload was lost: still
+             acknowledge the type without crashing on missing fields. -->
+        <div v-else-if="!message.deleted && message.type === 'locationMessage'" class="unsupported-message" dir="auto">
+          <span class="unsupported-icon" aria-hidden="true">📍</span>
+          <span class="unsupported-text">מיקום</span>
+        </div>
+        <div v-else-if="!message.deleted && isInteractiveMessage(message) && message.interactiveData" class="interactive-message">
           <div v-if="message.interactiveData.title" class="interactive-title" dir="auto">{{ message.interactiveData.title }}</div>
           <div v-if="message.interactiveData.body" class="interactive-body" dir="auto">
             <template v-for="(part, index) in formatMessageText(message.interactiveData.body)" :key="`${message.id}:ibody:${index}`">
