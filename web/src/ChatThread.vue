@@ -621,7 +621,7 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
              location payload (or with malformed coordinates), which would
              throw `Cannot read properties of undefined (reading 'name')`
              during render. -->
-        <div v-else-if="!message.deleted && isLocationMessage(message) && message.location" class="location-message">
+        <div v-else-if=" isLocationMessage(message) && message.location" class="location-message">
           <div v-if="message.location.name" class="location-name" dir="auto">{{ message.location.name }}</div>
           <div v-if="message.location.address" class="location-address" dir="auto">{{ message.location.address }}</div>
           <div v-if="message.location.comment" class="location-comment" dir="auto">{{ message.location.comment }}</div>
