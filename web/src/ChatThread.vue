@@ -440,7 +440,7 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
     class="thread"
     @click="emit('thread-click')"
     @dblclick="handleDoubleClick($event, props.messages)"
-    @contextmenu.prevent="handleContextMenu($event, props.messages)"
+    @contextmenu="handleContextMenu($event, props.messages)"
     @dragover.prevent="emit('drag-over', $event)"
     @dragenter.prevent="emit('drag-over', $event)"
     @dragleave.self="emit('drag-leave')"
@@ -570,11 +570,13 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
             target="_blank"
             rel="noreferrer"
             :title="mediaKind(message) === 'sticker' ? 'פתח סטיקר בטאב חדש' : 'פתח תמונה בטאב חדש'"
+            @contextmenu.prevent
           >
             <img
               :class="['message-image', { sticker: mediaKind(message) === 'sticker' }]"
               :src="loadedMediaUrl(message)"
               alt=""
+              draggable="false"
               @load="finishMediaLoad(message)"
               @error="finishMediaLoad(message)"
             />
@@ -584,6 +586,7 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
             class="message-video"
             :src="loadedMediaUrl(message)"
             :style="mediaSizeStyle(message)"
+            draggable="false"
             controls
             preload="metadata"
             @loadedmetadata="finishMediaLoad(message)"
