@@ -220,7 +220,7 @@ function handleContextMenu(event, messages) {
   if (!props.selectedChat || props.loadingMessages) return
   // Allow browser native right-click on images and videos
   const target = event.target
-  if (target.tagName === 'IMG' || target.tagName === 'VIDEO') return
+  if (target.closest?.('img, video')) return
   event.preventDefault()
   const bubble = event.target.closest?.('.bubble')
   if (!bubble) return
@@ -538,10 +538,6 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
         <div
           v-else-if=" isDownloadableMedia(message)"
           class="message-media"
-          draggable="true"
-          title="Drag to another chat to forward"
-          @click.stop
-          @dragstart.stop="beginMediaDrag($event, message)"
         >
           <button
             v-if="mediaKind(message) !== 'document' && !loadedMediaUrl(message)"
@@ -570,28 +566,41 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
             target="_blank"
             rel="noreferrer"
             :title="mediaKind(message) === 'sticker' ? 'פתח סטיקר בטאב חדש' : 'פתח תמונה בטאב חדש'"
-            @contextmenu.prevent
           >
             <img
               :class="['message-image', { sticker: mediaKind(message) === 'sticker' }]"
               :src="loadedMediaUrl(message)"
               alt=""
-              draggable="false"
+              draggable="true"
+              @dragstart.stop="beginMediaDrag($event, message)"
               @load="finishMediaLoad(message)"
               @error="finishMediaLoad(message)"
             />
           </a>
-          <video
+          <div
             v-else-if="mediaKind(message) === 'video'"
-            class="message-video"
-            :src="loadedMediaUrl(message)"
-            :style="mediaSizeStyle(message)"
-            draggable="false"
-            controls
-            preload="metadata"
-            @loadedmetadata="finishMediaLoad(message)"
-            @error="finishMediaLoad(message)"
-          ></video>
+            class="video-media"
+          >
+            <span
+              class="media-drag-handle"
+              draggable="true"
+              title="Drag video to another chat"
+              @dragstart.stop="beginMediaDrag($event, message)"
+            >⠿</span>
+            <video
+              class="message-video"
+              :src="loadedMediaUrl(message)"
+              :style="mediaSizeStyle(message)"
+              draggable="false"
+              controls
+              preload="metadata"
+              @pointerdown.stop
+              @click.stop
+              @dblclick.stop
+              @loadedmetadata="finishMediaLoad(message)"
+              @error="finishMediaLoad(message)"
+            ></video>
+          </div>
           <audio
             v-else
             class="message-audio"
