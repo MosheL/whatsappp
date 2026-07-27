@@ -695,6 +695,14 @@ button {
   overflow: visible;
 }
 
+/* Native video controls use browser-managed hit targets.  Chromium can lose
+   those hit targets when the video is inside a content-visibility-contained
+   row, even though the video itself is visible. */
+.message-row.has-video {
+  contain: none;
+  content-visibility: visible;
+}
+
 .message-item {
   align-items: flex-start;
   align-self: stretch;
