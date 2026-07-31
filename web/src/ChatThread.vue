@@ -487,7 +487,7 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
     <div
       v-for="{ message, index: mi } in (loadingMessages ? [] : visibleMessages)"
       :key="message.id"
-      :class="['message-row', { 'has-video': mediaKind(message) === 'video' }]"
+       :class="['message-row', { 'has-video': mediaKind(message) === 'video' }]"
     >
       <div v-if="showDateCaption(mi)" class="date-caption" :key="'date-' + message.id">{{ dateCaption(mi) }}</div>
       <div
@@ -579,7 +579,11 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
           </a>
           <div
             v-else-if="mediaKind(message) === 'video'"
-            class="video-media"
+            class="video-media" :style="mediaSizeStyle(message)" @pointerdown.stop
+              @click.stop
+              @dblclick.stop
+              @dragstart.stop
+              @mousemove.stop @mouseenter.stop
           >
             <span
               class="media-drag-handle"
@@ -591,9 +595,9 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
               class="message-video"
               :src="loadedMediaUrl(message)"
               :style="mediaSizeStyle(message)"
-              draggable="false"
+              draggable="false" autoplay 
               controls
-              preload="metadata"
+              preload="metadata"          
               @loadedmetadata="finishMediaLoad(message)"
               @error="finishMediaLoad(message)"
             ></video>
