@@ -246,12 +246,18 @@ export type WsEventMessageUpdate = {
   patch: MessagePatch
 }
 
+export type WsEventRefresh = {
+  type: 'refresh'
+  bot: string
+}
+
 export type WsEventPayload =
   | WsEventConnection
   | WsEventChat
   | WsEventChatMerge
   | WsEventMessage
   | WsEventMessageUpdate
+  | WsEventRefresh
   | { type: 'init'; bots: BotStatus[] }
 
 // -------- Presence / typing --------

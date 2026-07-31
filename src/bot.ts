@@ -54,7 +54,7 @@ import {
   phoneFromVcard
 } from './message-processor.ts'
 import { MessageStore } from './message-store.ts'
-import { mergeMessagePatch } from './message-utils.ts'
+import { mergeMessagePatch, messageStatusRank } from './message-utils.ts'
 
 const redisOptions = {
   host: process.env.REDIS_HOST ?? '127.0.0.1',
@@ -74,6 +74,8 @@ const WA_QUERY_TIMEOUT_MS = Number(process.env.WA_QUERY_TIMEOUT_MS || 180000)
 const CHAT_SETTINGS_RESYNC_INTERVAL_MS = Number(process.env.UI_CHAT_SETTINGS_RESYNC_INTERVAL_MS || 24 * 60 * 60 * 1000)
 const HISTORY_SYNC_WAIT_MS = Number(process.env.UI_HISTORY_SYNC_WAIT_MS || 120000)
 const HISTORY_SYNC_INITIAL_WAIT_MS = Number(process.env.UI_HISTORY_SYNC_INITIAL_WAIT_MS || 10000)
+const RESUME_REFRESH_THRESHOLD_MS = Number(process.env.UI_RESUME_REFRESH_THRESHOLD_MS || 30 * 1000)
+const RESUME_REFRESH_DELAY_MS = Number(process.env.UI_RESUME_REFRESH_DELAY_MS || 3 * 1000)
 const GROUP_METADATA_CACHE_MS = Number(process.env.UI_GROUP_METADATA_CACHE_MS || 10 * 60 * 1000)
 const LINK_PREVIEW_TIMEOUT_MS = Number(process.env.UI_LINK_PREVIEW_TIMEOUT_MS || 5000)
 const LINK_PREVIEW_CACHE_MS = Number(process.env.UI_LINK_PREVIEW_CACHE_MS || 2 * 60 * 1000)
@@ -174,6 +176,7 @@ export class Bot {
   groupMetadataCacheKey: (jid: string) => string
   chatSettingsSyncKey: string
   currentWait: NodeJS.Timeout | undefined
+  disconnectTime = 0
   transcriptionCache: Map<string, string>
   linkPreviewCache: Map<string, { expiresAt: number, promise: Promise<WAUrlInfo | undefined> }>
   callPeers: Map<string, string>
@@ -1367,6 +1370,79 @@ export class Bot {
     }
   }
 
+  // -------- Resume / reconnect refresh --------
+
+  /**
+   * Called when the bot reconnects after a long disconnect (e.g. laptop sleep).
+   * Invalidates caches, waits for history sync/read receipts to settle, then
+   * recalculates unread counts and emits a refresh event to the UI.
+   */
+  async refreshAfterResume() {
+    // Invalidate group metadata cache so participant lists and names are refetched
+    await this.invalidateGroupMetadataCache()
+    // Clear avatar failure backoffs so contact photos are re-fetched (they may have changed)
+    this.avatarFailures.clear()
+    // Wait for the history sync and read receipts from the phone to be processed
+    await new Promise(resolve => setTimeout(resolve, RESUME_REFRESH_DELAY_MS))
+    // Recalculate unread counts from the message store (WhatsApp's unreadCount is
+    // intentionally ignored, so we must derive counts from stored messages)
+    await this.recalculateUnreadCounts()
+    // Tell the UI to reload its chat list
+    this.events.emit('event', { type: 'refresh', bot: this.authKey })
+  }
+
+  /**
+   * Recalculates unread counts for all chats by counting stored messages that
+   * are not from-me and have not been read (status rank < 4).
+   * This corrects stale counts after a disconnect where read receipts from the
+   * phone were not received.
+   */
+  async recalculateUnreadCounts() {
+    const chatJids = [...this.chats.keys()].filter(jid => !shouldIgnoreUiJid(jid))
+    const results = await Promise.allSettled(
+      chatJids.map(async jid => {
+        const memory = this.messages.get(jid) || []
+        let stored: UiMessage[] = []
+        try {
+          stored = await this.messageStore.getStoredMessages(jid, 200)
+        } catch {}
+        return { jid, messages: [...memory, ...stored] }
+      })
+    )
+    const chatsToUpdate: UiChat[] = []
+    for (const result of results) {
+      if (result.status !== 'fulfilled') continue
+      const { jid, messages } = result.value
+      const chat = this.chats.get(jid)
+      if (!chat) continue
+      const seen = new Set<string>()
+      let unread = 0
+      for (const message of messages) {
+        if (!message.id || seen.has(message.id)) continue
+        seen.add(message.id)
+        if (!message.fromMe && messageStatusRank(message.status) < 4) unread++
+      }
+      if (unread !== chat.unread) {
+        chat.unread = unread
+        chatsToUpdate.push(chat)
+      }
+    }
+    for (const chat of chatsToUpdate) {
+      this.persistChat(chat)
+      this.events.emit('event', { type: 'chat', bot: this.authKey, chat })
+    }
+    if (chatsToUpdate.length) {
+      console.log(`${this.label}: recalculated unread counts for ${chatsToUpdate.length} chats`)
+    }
+  }
+
+  /**
+   * Clears the Redis group-metadata cache so group info is refetched on next access.
+   */
+  async invalidateGroupMetadataCache() {
+    await deleteRedisPattern(this.redis, `ui:${this.authKey}:group-metadata-fetched:*`).catch(() => {})
+  }
+
   upsertChatFromBaileys(chatData: Partial<Chat>) { this.chatStore.upsertChatFromBaileys(chatData) }
 
   async applyChatUpdate(chatData: Partial<Chat>) {
@@ -1441,10 +1517,17 @@ export class Bot {
             sock.presenceSubscribe(chat.jid).catch(err => console.error(`${this.label}: subscribe error`, err.message))
           }
         }
+
+        const downtime = this.disconnectTime ? Date.now() - this.disconnectTime : 0
+        if (downtime > RESUME_REFRESH_THRESHOLD_MS) {
+          console.log(`${this.label}: long disconnect (${Math.round(downtime / 1000)}s), refreshing information`)
+          this.refreshAfterResume().catch(err => console.error(`${this.label}: refresh after resume failed`, err.message))
+        }
       }
 
       if (connection === 'close') {
         this.connection = 'close'
+        this.disconnectTime = Date.now()
         this.emitStatus()
         console.log(`${this.label}: connection closed`, lastDisconnect?.error)
 

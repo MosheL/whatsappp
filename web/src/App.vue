@@ -409,6 +409,11 @@ function connectWs() {
       }
     }
     if (data.type === 'message') scheduleBotRefresh()
+    if (data.type === 'refresh' && data.bot === selectedBot.value) {
+      await loadChats()
+      await loadContacts()
+    }
+    if (data.type === 'refresh') scheduleBotRefresh()
   }
   ws.onclose = () => {
     wsState.value = 'מנותק'

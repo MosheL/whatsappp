@@ -148,6 +148,8 @@ docker compose up    # Server + Redis + UI
 | `UI_CHAT_SETTINGS_RESYNC_INTERVAL_MS` | `24h` | Chat settings sync interval |
 | `UI_HISTORY_SYNC_WAIT_MS` | `120s` | Max wait for full history sync |
 | `UI_GROUP_METADATA_CACHE_MS` | `10 min` | Group metadata fetch cache |
+| `UI_RESUME_REFRESH_THRESHOLD_MS` | `30s` | Min disconnect duration to trigger a full refresh on reconnect (e.g. laptop sleep) |
+| `UI_RESUME_REFRESH_DELAY_MS` | `3s` | Delay before refreshing after reconnect (allows history sync/read receipts to settle) |
 | `SYNC_FULL_HISTORY` | `true` | Request full history on connect |
 | `WA_QUERY_TIMEOUT_MS` | `180s` | Query timeout |
 
