@@ -339,17 +339,118 @@ export class Bot {
     return result.sort((a, b) => a.name.localeCompare(b.name))
   }
 
-  async getMessages(jid: string, limit = MEMORY_MESSAGE_LIMIT, before?: number): Promise<UiMessage[]> {
+  async getMessages(jid: string, limit = MEMORY_MESSAGE_LIMIT, before?: number, after?: number): Promise<UiMessage[]> {
     jid = this.contactCache.canonicalJid(jid)
     const safeLimit = Math.max(1, Math.min(limit, 500))
-    const ids = before
-      ? await this.redis.zrevrangebyscore(this.messageIndexKey(jid), `(${before}`, '-inf', 'LIMIT', 0, safeLimit)
-      : await this.redis.zrange(this.messageIndexKey(jid), -safeLimit, -1)
+    const indexKey = this.messageIndexKey(jid)
+    let ids: string[]
+    if (before) {
+      ids = await this.redis.zrevrangebyscore(indexKey, `(${before}`, '-inf', 'LIMIT', 0, safeLimit)
+    } else if (after) {
+      ids = await this.redis.zrangebyscore(indexKey, `(${after}`, '+inf', 'LIMIT', 0, safeLimit)
+    } else {
+      ids = await this.redis.zrange(indexKey, -safeLimit, -1)
+    }
     const raw = await this.messageStore.loadMessagePayloads(jid, ids)
     return raw
       .filter(Boolean)
       .map(item => this.publicMessage(JSON.parse(item!)))
       .sort((a, b) => a.timestamp - b.timestamp)
+  }
+
+  /**
+   * Return a contiguous block of full messages around an anchor message id,
+   * so the UI can show the context surrounding a search hit.
+   */
+  async getMessagesAround(jid: string, messageId: string, limit = 40): Promise<{ messages: UiMessage[], hasOlder: boolean, hasNewer: boolean }> {
+    jid = this.contactCache.canonicalJid(jid)
+    const indexKey = this.messageIndexKey(jid)
+    const anchor = await this.messageStore.getStoredMessage(jid, messageId)
+    if (!anchor) return { messages: [], hasOlder: false, hasNewer: false }
+    const half = Math.max(1, Math.ceil(limit / 2))
+    const ts = anchor.timestamp || 0
+    // Exclusive score bounds so the anchor isn't duplicated; consistent with `before`.
+    const olderIds = await this.redis.zrevrangebyscore(indexKey, `(${ts}`, '-inf', 'LIMIT', 0, half)
+    const newerIds = await this.redis.zrangebyscore(indexKey, `(${ts}`, '+inf', 'LIMIT', 0, half)
+    const ids = [...[...olderIds].reverse(), messageId, ...newerIds]
+    const raw = await this.messageStore.loadMessagePayloads(jid, ids)
+    const messages = raw
+      .filter(Boolean)
+      .map(item => this.publicMessage(JSON.parse(item!)))
+      .sort((a, b) => a.timestamp - b.timestamp)
+    const olderCount = await this.redis.zcount(indexKey, '-inf', `(${ts}`)
+    const newerCount = await this.redis.zcount(indexKey, `(${ts}`, '+inf')
+    return {
+      messages,
+      hasOlder: olderCount > half,
+      hasNewer: newerCount > half
+    }
+  }
+
+  /**
+   * Search the `text` of stored messages across chats (recent-biased, bounded).
+   * Returns lightweight rows (no `raw`/media) enriched with chat metadata.
+   */
+  async searchMessages(query: string, opts: { chatJid?: string, limit?: number, maxScan?: number } = {}): Promise<{ results: any[], truncated: boolean }> {
+    const q = String(query || '').trim().toLowerCase()
+    if (!q) return { results: [], truncated: false }
+    const limit = Math.max(1, Math.min(Number(opts.limit) || 50, 200))
+    const maxScan = Math.max(limit, Number(opts.maxScan) || 5000)
+
+    const candidateJids = opts.chatJid
+      ? [this.contactCache.canonicalJid(opts.chatJid)]
+      : await this.redis.zrevrange(this.chatIndexKey, 0, -1)
+
+    const results: any[] = []
+    let scanned = 0
+    for (const jid of candidateJids) {
+      if (results.length >= limit || scanned >= maxScan) break
+      if (!jid) continue
+      const ids: string[] = await this.redis.zrevrange(this.messageIndexKey(jid), 0, 499)
+      if (!ids.length) continue
+      const raw = await this.messageStore.loadMessagePayloads(jid, ids)
+      scanned += ids.length
+      for (const item of raw) {
+        if (!item) continue
+        let message: UiMessage
+        try { message = JSON.parse(item) } catch { continue }
+        const text = String(message.text || '')
+        if (!text || !text.toLowerCase().includes(q)) continue
+        const safe = this.publicMessage(message)
+        results.push({
+          jid: safe.jid,
+          id: safe.id,
+          text: safe.text,
+          sender: safe.sender,
+          fromMe: safe.fromMe,
+          timestamp: safe.timestamp,
+          type: safe.type
+        })
+        if (results.length >= limit) break
+      }
+    }
+
+    results.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+
+    // Enrich with chat metadata (name etc.) for display.
+    const uniqueJids = [...new Set(results.map((r: any) => r.jid))].filter(Boolean)
+    const chatsById = new Map<string, UiChat>()
+    if (uniqueJids.length) {
+      const chatRows = await this.redis.hmget(this.chatCacheKey, ...uniqueJids)
+      for (let i = 0; i < uniqueJids.length; i++) {
+        const row = chatRows[i]
+        if (!row) continue
+        try { chatsById.set(uniqueJids[i], JSON.parse(row)) } catch {}
+      }
+    }
+    for (const result of results) {
+      const chat = chatsById.get(result.jid)
+      result.chatName = chat?.name || ''
+      result.displayJid = chat?.displayJid || chat?.phoneNumber || ''
+      result.isGroup = Boolean(chat?.isGroup)
+    }
+
+    return { results, truncated: scanned >= maxScan }
   }
 
   async syncOlderMessages(jid: string, count = 50) {

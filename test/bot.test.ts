@@ -768,3 +768,196 @@ test('does not extract location for non-location messages', () => {
   assert.equal(recorded.length, 1)
   assert.equal(recorded[0].location, undefined)
 })
+
+test('searchMessages returns matching messages across chats enriched with chat names', async () => {
+  const jid = '972501234567@s.whatsapp.net'
+  const groupJid = 'group@g.us'
+  const payloads = {
+    [`${jid}:m1`]: JSON.stringify({ id: 'm1', jid, text: 'hello world', sender: 'Alice', fromMe: false, timestamp: 1000, type: 'conversation' }),
+    [`${jid}:m2`]: JSON.stringify({ id: 'm2', jid, text: 'no match here', sender: 'Alice', fromMe: false, timestamp: 2000, type: 'conversation' }),
+    [`${groupJid}:m3`]: JSON.stringify({ id: 'm3', jid: groupJid, text: 'WORLD greetings', sender: 'Bob', fromMe: true, timestamp: 3000, type: 'conversation' })
+  }
+  const messageIndex: Record<string, string[]> = {
+    [jid]: ['m1', 'm2'],
+    [groupJid]: ['m3']
+  }
+  const fakeBot: any = {
+    chatIndexKey: 'ui:auth:chat-index',
+    chatCacheKey: 'ui:auth:chats',
+    messageIndexKey: (j: string) => `ui:auth:message-index:${j}`,
+    messagePayloadKey: (j: string, id: string) => `ui:auth:message:${Buffer.from(`${j}:${id}`).toString('base64url')}`,
+    contactCache: { canonicalJid: (value: string) => value },
+    messageStore: {
+      loadMessagePayloads: async (j: string, ids: string[]) => ids.map(id => payloads[`${j}:${id}`] || null)
+    },
+    publicMessage: (message: any) => message,
+    redis: {
+      zrevrange: async (key: string, from: number, to: number) => {
+        if (key === 'ui:auth:chat-index') return [groupJid, jid]
+        const j = key.replace('ui:auth:message-index:', '')
+        return messageIndex[j] || []
+      },
+      hmget: async (_key: string, ...ids: string[]) => ids.map(id => JSON.stringify({ name: id === jid ? 'Alice' : 'Group', displayJid: id.replace(/@.*/, ''), isGroup: id === groupJid }))
+    }
+  }
+
+  const { results, truncated } = await Bot.prototype.searchMessages.call(fakeBot, 'world', {})
+
+  assert.equal(truncated, false)
+  assert.equal(results.length, 2)
+  // newest first
+  assert.equal(results[0].id, 'm3')
+  assert.equal(results[0].chatName, 'Group')
+  assert.equal(results[0].isGroup, true)
+  assert.equal(results[0].fromMe, true)
+  assert.equal(results[1].id, 'm1')
+  assert.equal(results[1].chatName, 'Alice')
+})
+
+test('searchMessages is case-insensitive and empty query returns nothing', async () => {
+  const jid = '972501234567@s.whatsapp.net'
+  const payloads = {
+    [`${jid}:m1`]: JSON.stringify({ id: 'm1', jid, text: 'Hello WORLD', sender: 'A', fromMe: false, timestamp: 1, type: 'conversation' })
+  }
+  const fakeBot: any = {
+    chatIndexKey: 'idx',
+    chatCacheKey: 'chats',
+    messageIndexKey: (j: string) => `idx:${j}`,
+    messagePayloadKey: (j: string, id: string) => `${j}:${id}`,
+    contactCache: { canonicalJid: (value: string) => value },
+    messageStore: { loadMessagePayloads: async (j: string, ids: string[]) => ids.map(id => payloads[`${j}:${id}`] || null) },
+    publicMessage: (message: any) => message,
+    redis: {
+      zrevrange: async (key: string) => key === 'idx' ? [jid] : ['m1'],
+      hmget: async () => [JSON.stringify({ name: 'A' })]
+    }
+  }
+
+  const empty = await Bot.prototype.searchMessages.call(fakeBot, '   ', {})
+  assert.deepEqual(empty.results, [])
+
+  const result = await Bot.prototype.searchMessages.call(fakeBot, 'HELLO', {})
+  assert.equal(result.results.length, 1)
+  assert.equal(result.results[0].id, 'm1')
+})
+
+test('searchMessages limits to a single chat when chatJid is given', async () => {
+  const jid = '972501234567@s.whatsapp.net'
+  const other = '972509999999@s.whatsapp.net'
+  const payloads = {
+    [`${jid}:m1`]: JSON.stringify({ id: 'm1', jid, text: 'find me', sender: 'A', fromMe: false, timestamp: 1, type: 'conversation' }),
+    [`${other}:m2`]: JSON.stringify({ id: 'm2', jid: other, text: 'find me too', sender: 'B', fromMe: false, timestamp: 2, type: 'conversation' })
+  }
+  const fakeBot: any = {
+    chatIndexKey: 'idx',
+    chatCacheKey: 'chats',
+    messageIndexKey: (j: string) => `idx:${j}`,
+    messagePayloadKey: (j: string, id: string) => `${j}:${id}`,
+    contactCache: { canonicalJid: (value: string) => value },
+    messageStore: { loadMessagePayloads: async (j: string, ids: string[]) => ids.map(id => payloads[`${j}:${id}`] || null) },
+    publicMessage: (message: any) => message,
+    redis: {
+      zrevrange: async (key: string) => key === 'idx' ? [other, jid] : ['m1'],
+      hmget: async () => [JSON.stringify({ name: 'A' })]
+    }
+  }
+
+  const { results } = await Bot.prototype.searchMessages.call(fakeBot, 'find', { chatJid: jid })
+  assert.equal(results.length, 1)
+  assert.equal(results[0].id, 'm1')
+})
+
+test('getMessagesAround returns the anchor and context on each side', async () => {
+  const jid = '972501234567@s.whatsapp.net'
+  const ids = ['old', 'anchor', 'new']
+  const payloads = {
+    old: JSON.stringify({ id: 'old', jid, text: 'old', sender: 'A', fromMe: false, timestamp: 100, type: 'conversation' }),
+    anchor: JSON.stringify({ id: 'anchor', jid, text: 'anchor', sender: 'A', fromMe: false, timestamp: 200, type: 'conversation' }),
+    new: JSON.stringify({ id: 'new', jid, text: 'new', sender: 'A', fromMe: false, timestamp: 300, type: 'conversation' })
+  }
+  const fakeBot: any = {
+    messageIndexKey: (j: string) => `idx:${j}`,
+    contactCache: { canonicalJid: (value: string) => value },
+    messageStore: {
+      getStoredMessage: async () => JSON.parse(payloads.anchor),
+      loadMessagePayloads: async (_j: string, returnedIds: string[]) => returnedIds.map(id => payloads[id] || null)
+    },
+    publicMessage: (message: any) => message,
+    redis: {
+      zrevrangebyscore: async () => ['old'],
+      zrangebyscore: async () => ['new'],
+      zcount: async () => 1
+    }
+  }
+
+  const result = await Bot.prototype.getMessagesAround.call(fakeBot, jid, 'anchor', 40)
+
+  assert.deepEqual(result.messages.map(m => m.id), ['old', 'anchor', 'new'])
+  assert.equal(result.hasOlder, false)
+  assert.equal(result.hasNewer, false)
+})
+
+test('getMessagesAround reports more context available via hasOlder/hasNewer', async () => {
+  const jid = '972501234567@s.whatsapp.net'
+  const payloads = {
+    anchor: JSON.stringify({ id: 'anchor', jid, text: 'a', sender: 'A', fromMe: false, timestamp: 200, type: 'conversation' })
+  }
+  const fakeBot: any = {
+    messageIndexKey: (j: string) => `idx:${j}`,
+    contactCache: { canonicalJid: (value: string) => value },
+    messageStore: {
+      getStoredMessage: async () => JSON.parse(payloads.anchor),
+      loadMessagePayloads: async (_j: string, ids: string[]) => ids.map(id => payloads[id] || null)
+    },
+    publicMessage: (message: any) => message,
+    redis: {
+      zrevrangebyscore: async () => [],
+      zrangebyscore: async () => [],
+      zcount: async () => 30
+    }
+  }
+
+  const result = await Bot.prototype.getMessagesAround.call(fakeBot, jid, 'anchor', 40)
+
+  assert.equal(result.messages.length, 1)
+  assert.equal(result.hasOlder, true)
+  assert.equal(result.hasNewer, true)
+})
+
+test('getMessagesAround returns empty when the anchor is missing', async () => {
+  const fakeBot: any = {
+    messageIndexKey: (j: string) => `idx:${j}`,
+    contactCache: { canonicalJid: (value: string) => value },
+    messageStore: { getStoredMessage: async () => undefined }
+  }
+
+  const result = await Bot.prototype.getMessagesAround.call(fakeBot, 'jid', 'missing', 40)
+  assert.deepEqual(result.messages, [])
+  assert.equal(result.hasOlder, false)
+  assert.equal(result.hasNewer, false)
+})
+
+test('getMessages fetches newer messages with the after parameter', async () => {
+  const jid = '972501234567@s.whatsapp.net'
+  const payloads = {
+    m2: JSON.stringify({ id: 'm2', jid, text: 'newer', sender: 'A', fromMe: false, timestamp: 200, type: 'conversation' })
+  }
+  let usedMethod = ''
+  const fakeBot: any = {
+    messageIndexKey: (j: string) => `idx:${j}`,
+    contactCache: { canonicalJid: (value: string) => value },
+    messageStore: { loadMessagePayloads: async (_j: string, ids: string[]) => ids.map(id => payloads[id] || null) },
+    publicMessage: (message: any) => message,
+    redis: {
+      zrangebyscore: async () => { usedMethod = 'zrangebyscore'; return ['m2'] },
+      zrevrangebyscore: async () => { usedMethod = 'zrevrangebyscore'; return [] },
+      zrange: async () => { usedMethod = 'zrange'; return [] }
+    }
+  }
+
+  const messages = await Bot.prototype.getMessages.call(fakeBot, jid, 100, undefined, 150)
+
+  assert.equal(usedMethod, 'zrangebyscore')
+  assert.equal(messages.length, 1)
+  assert.equal(messages[0].id, 'm2')
+})

@@ -367,12 +367,51 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     const bot = bots.get(url.searchParams.get('bot') || '')
     const jid = url.searchParams.get('jid') || ''
     const before = Number(url.searchParams.get('before') || 0) || undefined
+    const after = Number(url.searchParams.get('after') || 0) || undefined
     const limit = Number(url.searchParams.get('limit') || 200)
     if (!bot) {
       sendJson(res, 404, { error: 'לקוח לא נמצא' })
       return
     }
-    sendJson(res, 200, { messages: await bot.getMessages(jid, limit, before) })
+    sendJson(res, 200, { messages: await bot.getMessages(jid, limit, before, after) })
+    return
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/messages-around') {
+    const jid = url.searchParams.get('jid') || ''
+    const id = url.searchParams.get('id') || ''
+    if (!jid || !id) {
+      sendJson(res, 400, { error: 'חסר נמען או הודעה' })
+      return
+    }
+    const bot = bots.get(url.searchParams.get('bot') || '')
+    const limit = Number(url.searchParams.get('limit') || 40)
+    if (!bot) {
+      sendJson(res, 404, { error: 'לקוח לא נמצא' })
+      return
+    }
+    try {
+      sendJson(res, 200, await bot.getMessagesAround(jid, id, limit))
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/search') {
+    const bot = getRequestedBot(url.searchParams.get('bot'))
+    if (!bot) {
+      sendJson(res, 404, { error: 'לקוח לא נמצא' })
+      return
+    }
+    const q = url.searchParams.get('q') || ''
+    const limit = Number(url.searchParams.get('limit') || 50)
+    const chat = url.searchParams.get('chat') || undefined
+    try {
+      sendJson(res, 200, await bot.searchMessages(q, { chatJid: chat, limit }))
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
     return
   }
 

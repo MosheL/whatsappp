@@ -124,3 +124,44 @@ test('clears the session cookie on logout', async () => {
   assert.equal(body.ok, true)
   assert.match(response.headers.get('set-cookie') || '', /Max-Age=0/)
 })
+
+test('search route requires an authenticated session', async () => {
+  const { response } = await json('/api/search?q=hello')
+  assert.equal(response.status, 401)
+})
+
+test('search route returns 404 for an unknown bot', async () => {
+  const cookie = await login()
+  const { response, body } = await json('/api/search?bot=missing&q=hello', {
+    headers: { Cookie: cookie }
+  })
+  assert.equal(response.status, 404)
+  assert.equal(typeof body.error, 'string')
+})
+
+test('messages-around route rejects missing params', async () => {
+  const cookie = await login()
+  const { response, body } = await json('/api/messages-around?bot=missing', {
+    headers: { Cookie: cookie }
+  })
+  assert.equal(response.status, 400)
+  assert.equal(typeof body.error, 'string')
+})
+
+test('messages-around route returns 404 for an unknown bot', async () => {
+  const cookie = await login()
+  const { response, body } = await json('/api/messages-around?bot=missing&jid=1@s.whatsapp.net&id=m1', {
+    headers: { Cookie: cookie }
+  })
+  assert.equal(response.status, 404)
+  assert.equal(typeof body.error, 'string')
+})
+
+test('messages route returns 404 for an unknown bot with after param', async () => {
+  const cookie = await login()
+  const { response, body } = await json('/api/messages?bot=missing&jid=1@s.whatsapp.net&after=100', {
+    headers: { Cookie: cookie }
+  })
+  assert.equal(response.status, 404)
+  assert.equal(typeof body.error, 'string')
+})

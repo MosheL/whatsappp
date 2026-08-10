@@ -11,6 +11,7 @@ import {
 import { messageStatusRank, mergeMessagePatch, reactionUserKey } from '../../src/message-utils.ts'
 import ChatList from './ChatList.vue'
 import ChatThread from './ChatThread.vue'
+import SearchPopup from './SearchPopup.vue'
 
 const authenticated = ref(false)
 const password = ref('')
@@ -40,6 +41,7 @@ const chatDropJid = ref('')
 const showUploadModal = ref(false)
 const showForwardPopup = ref(false)
 const showContactPicker = ref(false)
+const showSearchPopup = ref(localStorage.getItem('wa-ui-search-open') === 'true')
 const selectedContactForSend = ref(null)
 const contactSearch = ref('')
 const showComposerMenu = ref(false)
@@ -1442,6 +1444,10 @@ watch(showArchived, value => {
   }
 })
 
+watch(showSearchPopup, value => {
+  localStorage.setItem('wa-ui-search-open', String(value))
+})
+
 watch(archivedCount, count => {
   if (!count && showArchived.value) showArchived.value = false
 })
@@ -1548,6 +1554,7 @@ onUnmounted(() => {
             </span>
           </p>
         </div>
+        <button class="icon-button search-toggle" type="button" :class="{ active: showSearchPopup }" title="חיפוש בהודעות" @click="showSearchPopup = !showSearchPopup">🔍</button>
       </header>
 
       <ChatThread
@@ -1659,6 +1666,10 @@ onUnmounted(() => {
     <div v-if="emojiPanelOpen" class="emoji-panel" @mousedown.stop @click.stop>
       <button v-for="emoji in emojis" :key="emoji" type="button" @click="insertEmoji(emoji)">{{ emoji }}</button>
     </div>
+  </Teleport>
+
+  <Teleport to="body">
+    <SearchPopup v-if="showSearchPopup" :selected-bot="selectedBot" :current-chat="selectedChat" @close="showSearchPopup = false" />
   </Teleport>
 
   <Teleport to="body">
