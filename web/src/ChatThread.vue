@@ -463,21 +463,6 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
     <button v-if="selectedChat && !loadingMessages" class="older-button" type="button" :disabled="loadingOlder" @click="emit('load-older')">
       {{ loadingOlder ? 'מוריד מהטלפון...' : 'הורד הודעות מהטלפון' }}
     </button>
-    <!-- Floating "scroll to latest" indicator. Visible only when the user has
-         scrolled away from the bottom and there are pending new messages to
-         catch up on. Sticky positioning keeps it pinned regardless of the
-         virtualized message window's apparent scroll position. -->
-    <button
-      v-if="selectedChat && !loadingMessages && newMessageCount > 0"
-      type="button"
-      class="scroll-down"
-      :data-count="newMessageCount > 9 ? '9+' : String(newMessageCount)"
-      :title="`${newMessageCount} הודעות חדשות`"
-      :aria-label="`גלול ל-${newMessageCount} הודעות חדשות`"
-      @click="forceScrollToBottom"
-    >
-      <span class="scroll-down-icon" aria-hidden="true">&#x25BC;</span>
-    </button>
     <div
       v-if="!loadingMessages && messageTopSpacerHeight"
       class="virtual-spacer"
@@ -810,6 +795,24 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
         כותב...
       </span>
     </div>
+    <!-- Floating "scroll to latest" indicator. Rendered as the last in-flow
+         child of the thread so that `position: sticky; bottom` (the sticky-
+         footer pattern) pins it to the viewport's bottom edge. Shown whenever
+         the user has scrolled away from the bottom (`!isNearBottom`), not only
+         when new messages are pending — so it always offers a way back down.
+         The red unread badge is driven by `data-count`, which is set only while
+         there actually are pending new messages. -->
+    <button
+      v-if="selectedChat && !loadingMessages && !isNearBottom"
+      type="button"
+      class="scroll-down"
+      :data-count="newMessageCount > 0 ? (newMessageCount > 9 ? '9+' : String(newMessageCount)) : null"
+      :title="newMessageCount > 0 ? `${newMessageCount} הודעות חדשות` : 'גלול לתחתית'"
+      :aria-label="newMessageCount > 0 ? `גלול ל-${newMessageCount} הודעות חדשות` : 'גלול לתחתית'"
+      @click="forceScrollToBottom"
+    >
+      <span class="scroll-down-icon" aria-hidden="true">&#x25BC;</span>
+    </button>
     <Teleport to="body">
       <div
         v-if="actionMessage && actionMessageId"
