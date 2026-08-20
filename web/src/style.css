@@ -3303,3 +3303,26 @@ button {
 .chat-info-modal-error {
   margin: 0 12px 12px;
 }
+
+.chat-info-modal-close {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.18);
+  border: 0;
+  border-radius: 6px;
+  color: #ffffff;
+  cursor: pointer;
+  display: flex;
+  font-size: 20px;
+  height: 30px;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  width: 30px;
+}
+.chat-info-modal-close:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+.chat-info-modal-close:disabled {
+  cursor: default;
+  opacity: 0.5;
+}

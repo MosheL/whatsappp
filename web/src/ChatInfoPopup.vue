@@ -444,7 +444,7 @@ onUnmounted(() => {
       <div class="chat-info-modal">
         <header class="chat-info-modal-head">
           <strong>הוסף משתמש</strong>
-          <button type="button" class="chat-info-edit-btn" :disabled="adding || addingContact" @click="closeAddModal" title="סגור">×</button>
+          <button type="button" class="chat-info-modal-close" :disabled="adding || addingContact" @click="closeAddModal" title="סגור" aria-label="סגור">×</button>
         </header>
 
         <div class="chat-info-modal-tabs" role="tablist">
