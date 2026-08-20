@@ -165,9 +165,12 @@ function openAddModal() {
 }
 
 function closeAddModal() {
-  if (adding.value || addingContact.value) return
   showAddModal.value = false
+  addPhone.value = ''
+  contactSearch.value = ''
   actionError.value = ''
+  adding.value = false
+  addingContact.value = ''
 }
 
 function switchAddTab(tab) {
@@ -352,10 +355,10 @@ watch(() => props.chat, (chat) => {
 
     <!-- Add-member modal (overlay) -->
     <div v-if="showAddModal" class="chat-info-modal-backdrop" @mousedown.self="closeAddModal">
-      <div class="chat-info-modal">
+      <div class="chat-info-modal" @mousedown.stop>
         <header class="chat-info-modal-head">
           <strong>הוסף משתמש</strong>
-          <button type="button" class="chat-info-modal-close" :disabled="adding || addingContact" @click="closeAddModal" title="סגור" aria-label="סגור">×</button>
+          <button type="button" class="chat-info-modal-close" @click="closeAddModal" title="סגור" aria-label="סגור">×</button>
         </header>
 
         <div class="chat-info-modal-tabs" role="tablist">
