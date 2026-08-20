@@ -735,18 +735,25 @@ export class Bot {
         console.error(`${this.label}: avatar too small (${buffer.length} bytes) from ${url.slice(0, 80)}`)
         return undefined
       }
-      // Re-encode the avatar at its real, full resolution (no downscale to a
-      // tiny thumbnail). Auto-rotate to remove EXIF orientation and output a
-      // clean webp/avatar.jpg at the source size.
-      return await sharp(buffer)
-        .rotate()
-        .resize({ width: 4096, height: 4096, fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 92 })
-        .toBuffer()
+      return buffer
     } catch (err: any) {
-      console.error(`${this.label}: failed to download/resize avatar`, err.message, 'from', url.slice(0, 80))
+      console.error(`${this.label}: failed to download avatar`, err.message, 'from', url.slice(0, 80))
       return undefined
     }
+  }
+
+  // Build and cache both a small thumbnail (low memory for the chat list) and a
+  // full-resolution re-encode (for displaying the avatar large in the popup).
+  async cacheAvatarVariants(jid: string, original: Buffer) {
+    const base = `ui:${this.authKey}:avatar:${jid}`
+    const [small, large] = await Promise.all([
+      sharp(original).rotate().resize({ width: 96, height: 96, fit: 'cover', position: 'centre' }).webp({ quality: 82 }).toBuffer(),
+      sharp(original).rotate().webp({ quality: 92 }).toBuffer()
+    ])
+    await Promise.all([
+      this.redis.set(base, small),
+      this.redis.set(`${base}:lg`, large)
+    ])
   }
 
 
