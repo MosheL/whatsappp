@@ -213,6 +213,7 @@ async function addUser() {
       body: JSON.stringify({ bot: props.selectedBot, jid: props.chat.jid, phone: addPhone.value.trim() })
     })
     addPhone.value = ''
+    showAddModal.value = false
     emit('refresh-participants')
   } catch (err) {
     actionError.value = err.message
@@ -221,9 +222,10 @@ async function addUser() {
   }
 }
 
-// -------- Add member from contacts --------
+// -------- Add member (phone / contacts) --------
 
-const showContactPicker = ref(false)
+const showAddModal = ref(false)
+const addTab = ref('phone') // 'phone' | 'contacts'
 const contactSearch = ref('')
 const addingContact = ref('')
 
@@ -231,6 +233,25 @@ function searchable(value) {
   return String(value ?? '').toLowerCase().replace(/@.*$/, '')
 }
 
+function openAddModal() {
+  addPhone.value = ''
+  contactSearch.value = ''
+  addTab.value = 'phone'
+  actionError.value = ''
+  showAddModal.value = true
+}
+
+function closeAddModal() {
+  if (adding.value || addingContact.value) return
+  showAddModal.value = false
+  actionError.value = ''
+}
+
+function switchAddTab(tab) {
+  addTab.value = tab
+  actionError.value = ''
+  if (tab === 'contacts' && !contactSearch.value) contactSearch.value = ''
+}
 function memberIdentities() {
   return new Set(props.participants.flatMap(p => {
     const keys = []
@@ -255,11 +276,6 @@ const availableContacts = computed(() => {
   return list.slice(0, 100)
 })
 
-function openContactPicker() {
-  contactSearch.value = ''
-  showContactPicker.value = true
-}
-
 async function addContact(contact) {
   const phone = contact?.phoneNumber
   if (addingContact.value || !phone) return
@@ -271,7 +287,8 @@ async function addContact(contact) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bot: props.selectedBot, jid: props.chat.jid, phone })
     })
-    showContactPicker.value = false
+    showAddModal.value = false
+    contactSearch.value = ''
     emit('refresh-participants')
   } catch (err) {
     actionError.value = err.message
@@ -292,7 +309,7 @@ watch(() => props.chat, (chat) => {
   addPhone.value = ''
   actionError.value = ''
   avatarFailed.value = false
-  showContactPicker.value = false
+  showAddModal.value = false
   contactSearch.value = ''
   editingName.value = false
   editingDesc.value = false
@@ -384,51 +401,11 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Add member: by phone -->
-      <div v-if="isGroup" class="chat-info-add-row">
-        <input
-          v-model="addPhone"
-          type="tel"
-          placeholder="הזן מספר טלפון"
-          class="chat-info-add-input"
-          @keydown.enter="addUser"
-        />
-        <button type="button" class="chat-info-action-btn" @click="addUser" :disabled="adding || !addPhone.trim()">
-          {{ adding ? 'מוסיף…' : '➕ הוסף' }}
+      <!-- Add member trigger -->
+      <div v-if="isGroup" class="chat-info-add-trigger">
+        <button type="button" class="chat-info-action-btn chat-info-add-member-btn" @click="openAddModal">
+          ➕ הוסף משתמש
         </button>
-        <button type="button" class="chat-info-action-btn" :disabled="adding" @click="openContactPicker">
-          👥 מאנשי קשר
-        </button>
-      </div>
-
-      <!-- Add member: from contacts -->
-      <div v-if="showContactPicker" class="chat-info-contacts">
-        <div class="chat-info-contacts-head">
-          <input
-            v-model="contactSearch"
-            type="search"
-            placeholder="חיפוש איש קשר"
-            class="chat-info-add-input"
-            autofocus
-          />
-        </div>
-        <div class="chat-info-contacts-list">
-          <p v-if="!availableContacts.length" class="chat-info-empty">אין אנשי קשר זמינים</p>
-          <button
-            v-for="contact in availableContacts"
-            :key="contact.jid || contact.phoneNumber"
-            type="button"
-            class="chat-info-contact"
-            @click="addContact(contact)"
-          >
-            <span class="chat-info-participant-avatar">{{ initials(contact) }}</span>
-            <div class="chat-info-participant-copy">
-              <strong dir="auto">{{ contact.name }}</strong>
-              <small v-if="contact.phoneNumber" dir="ltr">{{ contact.phoneNumber }}</small>
-            </div>
-            <span class="chat-info-contact-add">{{ addingContact === (contact.jid || contact.phoneNumber) ? 'מוסיף…' : '+' }}</span>
-          </button>
-        </div>
       </div>
       <p v-if="actionError" class="chat-info-error">{{ actionError }}</p>
 
@@ -461,6 +438,68 @@ onUnmounted(() => {
         🙋 עזוב את הקבוצה
       </button>
     </footer>
+
+    <!-- Add-member modal (overlay) -->
+    <div v-if="showAddModal" class="chat-info-modal-backdrop" @mousedown.self="closeAddModal">
+      <div class="chat-info-modal">
+        <header class="chat-info-modal-head">
+          <strong>הוסף משתמש</strong>
+          <button type="button" class="chat-info-edit-btn" :disabled="adding || addingContact" @click="closeAddModal" title="סגור">×</button>
+        </header>
+
+        <div class="chat-info-modal-tabs" role="tablist">
+          <button type="button" :class="{ active: addTab === 'phone' }" @click="switchAddTab('phone')">📱 לפי טלפון</button>
+          <button type="button" :class="{ active: addTab === 'contacts' }" @click="switchAddTab('contacts')">👥 מאנשי קשר</button>
+        </div>
+
+        <div class="chat-info-modal-body">
+          <!-- Phone tab -->
+          <div v-if="addTab === 'phone'" class="chat-info-phone-tab">
+            <input
+              v-model="addPhone"
+              type="tel"
+              placeholder="הזן מספר טלפון"
+              class="chat-info-add-input"
+              autofocus
+              @keydown.enter="addUser"
+            />
+            <button type="button" class="chat-info-action-btn" :disabled="adding || !addPhone.trim()" @click="addUser">
+              {{ adding ? 'מוסיף…' : '➕ הוסף' }}
+            </button>
+          </div>
+
+          <!-- Contacts tab -->
+          <div v-else class="chat-info-contacts-tab">
+            <input
+              v-model="contactSearch"
+              type="search"
+              placeholder="חיפוש איש קשר"
+              class="chat-info-add-input"
+              autofocus
+            />
+            <div class="chat-info-contacts-list">
+              <p v-if="!availableContacts.length" class="chat-info-empty">אין אנשי קשר זמינים</p>
+              <button
+                v-for="contact in availableContacts"
+                :key="contact.jid || contact.phoneNumber"
+                type="button"
+                class="chat-info-contact"
+                @click="addContact(contact)"
+              >
+                <span class="chat-info-participant-avatar">{{ initials(contact) }}</span>
+                <div class="chat-info-participant-copy">
+                  <strong dir="auto">{{ contact.name }}</strong>
+                  <small v-if="contact.phoneNumber" dir="ltr">{{ contact.phoneNumber }}</small>
+                </div>
+                <span class="chat-info-contact-add">{{ addingContact === (contact.jid || contact.phoneNumber) ? 'מוסיף…' : '+' }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <p v-if="actionError" class="chat-info-error chat-info-modal-error">{{ actionError }}</p>
+      </div>
+    </div>
 
     <span class="search-popup-resize" @mousedown="startResize" aria-hidden="true"></span>
   </div>
