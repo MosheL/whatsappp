@@ -33,19 +33,12 @@ function avatarSrc() {
   return avatarFailed.value ? '' : avatarUrl(props.chat, props.selectedBot, true)
 }
 
-// -------- Avatar lightbox (view original large) --------
-const avatarLightbox = ref('')
-
-function openLightbox() {
+// Open the full-resolution avatar in a new browser tab (matching the
+// right-click "open image in new tab" behavior).
+function openOriginalAvatar() {
   const url = avatarSrc()
   if (!url) return
-  avatarLightbox.value = url
-}
-function closeLightbox() {
-  avatarLightbox.value = ''
-}
-function openOriginalAvatar() {
-  openLightbox()
+  window.open(url, '_blank', 'noopener')
 }
 function onAvatarError() {
   avatarFailed.value = true
@@ -425,12 +418,4 @@ watch(() => props.chat, (chat) => {
       </div>
     </div>
   </Window>
-
-  <!-- Avatar lightbox (view original at full size) -->
-  <Teleport to="body">
-    <div v-if="avatarLightbox" class="avatar-lightbox" @click.self="closeLightbox" @keydown.esc="closeLightbox">
-      <button type="button" class="avatar-lightbox-close" title="סגור" @click="closeLightbox">×</button>
-      <img :src="avatarLightbox" alt="" class="avatar-lightbox-img" />
-    </div>
-  </Teleport>
 </template>
