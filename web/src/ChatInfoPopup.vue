@@ -1,6 +1,7 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { initials, avatarUrl } from './helpers.js'
+import Window from './Window.vue'
 
 const props = defineProps({
   selectedBot: { type: String, default: '' },
@@ -9,84 +10,6 @@ const props = defineProps({
   contacts: { type: Array, default: () => [] }
 })
 const emit = defineEmits(['close', 'leave-group', 'refresh-participants', 'chat-changed'])
-
-// -------- Window state (drag / resize, persisted) --------
-
-const STORAGE_KEY = 'wa-ui-chatinfo-window'
-const MIN_W = 300
-const MIN_H = 240
-
-function loadWindow() {
-  try {
-    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')
-    if (value && typeof value === 'object') return value
-  } catch {}
-  return null
-}
-
-const saved = loadWindow()
-const winLeft = ref(saved?.left ?? Math.max(12, window.innerWidth - 420))
-const winTop = ref(saved?.top ?? Math.max(12, window.innerHeight - 480))
-const winWidth = ref(saved?.width ?? 380)
-const winHeight = ref(saved?.height ?? 460)
-const windowRef = ref(null)
-
-function saveWindow() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      left: winLeft.value, top: winTop.value, width: winWidth.value, height: winHeight.value
-    }))
-  } catch {}
-}
-
-function clampWindow() {
-  const maxLeft = Math.max(0, window.innerWidth - 80)
-  const maxTop = Math.max(0, window.innerHeight - 60)
-  winLeft.value = Math.min(Math.max(0, winLeft.value), maxLeft)
-  winTop.value = Math.min(Math.max(0, winTop.value), maxTop)
-  winWidth.value = Math.min(Math.max(MIN_W, winWidth.value), window.innerWidth)
-  winHeight.value = Math.min(Math.max(MIN_H, winHeight.value), window.innerHeight)
-}
-
-function startDrag(event) {
-  if (event.button !== 0) return
-  const startX = event.clientX
-  const startY = event.clientY
-  const originLeft = winLeft.value
-  const originTop = winTop.value
-  const onMove = (e) => {
-    winLeft.value = Math.min(Math.max(0, originLeft + e.clientX - startX), window.innerWidth - 60)
-    winTop.value = Math.min(Math.max(0, originTop + e.clientY - startY), window.innerHeight - 40)
-  }
-  const onUp = () => {
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
-    saveWindow()
-  }
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
-}
-
-function startResize(event) {
-  if (event.button !== 0) return
-  event.preventDefault()
-  event.stopPropagation()
-  const startX = event.clientX
-  const startY = event.clientY
-  const originW = winWidth.value
-  const originH = winHeight.value
-  const onMove = (e) => {
-    winWidth.value = Math.max(MIN_W, Math.min(window.innerWidth - winLeft.value, originW + e.clientX - startX))
-    winHeight.value = Math.max(MIN_H, Math.min(window.innerHeight - winTop.value, originH + e.clientY - startY))
-  }
-  const onUp = () => {
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
-    saveWindow()
-  }
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
-}
 
 // -------- Group info / actions --------
 
@@ -315,29 +238,17 @@ watch(() => props.chat, (chat) => {
   editingDesc.value = false
   if (isGroup.value) loadGroupInfo()
 }, { immediate: true })
-
-onMounted(() => {
-  clampWindow()
-  window.addEventListener('resize', clampWindow)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('resize', clampWindow)
-})
 </script>
 
 <template>
-  <div
-    ref="windowRef"
-    class="search-popup chat-info-popup"
-    :style="{ left: winLeft + 'px', top: winTop + 'px', width: winWidth + 'px', height: winHeight + 'px' }"
+  <Window
+    class="chat-info-popup"
+    storage-key="wa-ui-chatinfo-window"
+    title="פרטי שיחה"
+    :default-w="380"
+    :default-h="460"
+    @close="emit('close')"
   >
-    <header class="search-popup-header" @mousedown="startDrag">
-      <span class="search-popup-grip" aria-hidden="true">⠿</span>
-      <strong class="search-popup-title">פרטי שיחה</strong>
-      <button type="button" class="search-popup-close" title="סגור" @mousedown.stop @click="emit('close')">×</button>
-    </header>
-
     <section class="chat-info-body">
       <div class="chat-info-hero">
         <img
@@ -500,7 +411,5 @@ onUnmounted(() => {
         <p v-if="actionError" class="chat-info-error chat-info-modal-error">{{ actionError }}</p>
       </div>
     </div>
-
-    <span class="search-popup-resize" @mousedown="startResize" aria-hidden="true"></span>
-  </div>
+  </Window>
 </template>

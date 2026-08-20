@@ -3326,3 +3326,16 @@ button {
   cursor: default;
   opacity: 0.5;
 }
+
+/* ---- Generic Window component ---- */
+.generic-window {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.window-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}

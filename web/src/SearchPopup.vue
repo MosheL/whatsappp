@@ -1,6 +1,7 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { formatTime, formatDateFull, formatDateCaption } from './helpers.js'
+import Window from './Window.vue'
 import {
   mediaUrl as renderMediaUrl,
   mediaLabel,
@@ -31,84 +32,6 @@ const props = defineProps({
   currentChat: { type: String, default: '' }
 })
 const emit = defineEmits(['close'])
-
-// -------- Window state (drag / resize, persisted) --------
-
-const STORAGE_KEY = 'wa-ui-search-window'
-const MIN_W = 340
-const MIN_H = 360
-
-function loadWindow() {
-  try {
-    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')
-    if (value && typeof value === 'object') return value
-  } catch {}
-  return null
-}
-
-const saved = loadWindow()
-const winLeft = ref(saved?.left ?? Math.max(12, window.innerWidth - 460))
-const winTop = ref(saved?.top ?? Math.max(12, window.innerHeight - 560))
-const winWidth = ref(saved?.width ?? 440)
-const winHeight = ref(saved?.height ?? 520)
-const windowRef = ref(null)
-
-function saveWindow() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      left: winLeft.value, top: winTop.value, width: winWidth.value, height: winHeight.value
-    }))
-  } catch {}
-}
-
-function clampWindow() {
-  const maxLeft = Math.max(0, window.innerWidth - 80)
-  const maxTop = Math.max(0, window.innerHeight - 60)
-  winLeft.value = Math.min(Math.max(0, winLeft.value), maxLeft)
-  winTop.value = Math.min(Math.max(0, winTop.value), maxTop)
-  winWidth.value = Math.min(Math.max(MIN_W, winWidth.value), window.innerWidth)
-  winHeight.value = Math.min(Math.max(MIN_H, winHeight.value), window.innerHeight)
-}
-
-function startDrag(event) {
-  if (event.button !== 0) return
-  const startX = event.clientX
-  const startY = event.clientY
-  const originLeft = winLeft.value
-  const originTop = winTop.value
-  const onMove = (e) => {
-    winLeft.value = Math.min(Math.max(0, originLeft + e.clientX - startX), window.innerWidth - 60)
-    winTop.value = Math.min(Math.max(0, originTop + e.clientY - startY), window.innerHeight - 40)
-  }
-  const onUp = () => {
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
-    saveWindow()
-  }
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
-}
-
-function startResize(event) {
-  if (event.button !== 0) return
-  event.preventDefault()
-  event.stopPropagation()
-  const startX = event.clientX
-  const startY = event.clientY
-  const originW = winWidth.value
-  const originH = winHeight.value
-  const onMove = (e) => {
-    winWidth.value = Math.max(MIN_W, Math.min(window.innerWidth - winLeft.value, originW + e.clientX - startX))
-    winHeight.value = Math.max(MIN_H, Math.min(window.innerHeight - winTop.value, originH + e.clientY - startY))
-  }
-  const onUp = () => {
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
-    saveWindow()
-  }
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
-}
 
 // -------- API helper --------
 
@@ -451,13 +374,7 @@ async function loadNewerContext() {
   }
 }
 
-onMounted(() => {
-  clampWindow()
-  window.addEventListener('resize', clampWindow)
-})
-
 onUnmounted(() => {
-  window.removeEventListener('resize', clampWindow)
   clearTimeout(searchTimer)
   for (const url of Object.values(loadedMedia.value)) {
     if (typeof url === 'string' && url.startsWith('blob:')) URL.revokeObjectURL(url)
@@ -471,22 +388,24 @@ function senderName(message) {
 </script>
 
 <template>
-  <div
-    ref="windowRef"
-    class="search-popup"
-    :style="{ left: winLeft + 'px', top: winTop + 'px', width: winWidth + 'px', height: winHeight + 'px' }"
+  <Window
+    storage-key="wa-ui-search-window"
+    :title="context ? (context.chatName || 'הקשר') : 'חיפוש בהודעות'"
+    :default-w="440"
+    :default-h="520"
+    :default-right="20"
+    @close="emit('close')"
   >
-    <header class="search-popup-header" @mousedown="startDrag">
-      <span class="search-popup-grip" aria-hidden="true">⠿</span>
-      <template v-if="!context">
-        <strong>חיפוש בהודעות</strong>
-      </template>
-      <template v-else>
-        <button type="button" class="search-popup-back" title="חזרה לתוצאות" @mousedown.stop @click="closeContext">‹</button>
-        <strong class="search-popup-title" :title="context.chatName">{{ context.chatName || 'הקשר' }}</strong>
-      </template>
-      <button type="button" class="search-popup-close" title="סגור" @mousedown.stop @click="emit('close')">×</button>
-    </header>
+    <template #back>
+      <button
+        v-if="context"
+        type="button"
+        class="search-popup-back"
+        title="חזרה לתוצאות"
+        @mousedown.stop
+        @click="closeContext"
+      >‹</button>
+    </template>
 
     <!-- Search results view -->
     <section v-if="!context" class="search-popup-body">
@@ -678,7 +597,5 @@ function senderName(message) {
         </div>
       </footer>
     </section>
-
-    <span class="search-popup-resize" @mousedown="startResize" aria-hidden="true"></span>
-  </div>
+  </Window>
 </template>
