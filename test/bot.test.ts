@@ -387,11 +387,12 @@ test('shares a resolved direct-chat name with another bot connection', async () 
 
 test('reloads and caches the original avatar after its Redis cache is cleared without requiring a chat entry', async () => {
   const jid = '972501234567@s.whatsapp.net'
-  const resized = Buffer.from('resized-avatar')
-  const writes: any[] = []
+  const original = Buffer.from('original-avatar')
   let requestedJid = ''
   let requestedType = ''
   let resizedUrl = ''
+  let cachedJid = ''
+  let cachedOriginal: Buffer | undefined
   const fakeBot: any = {
     authKey: 'auth',
     chats: new Map(),
@@ -402,8 +403,7 @@ test('reloads and caches the original avatar after its Redis cache is cleared wi
       contactForJid: () => undefined
     },
     redis: {
-      getBuffer: async () => null,
-      set: async (...args: any[]) => writes.push(args)
+      getBuffer: async () => null
     },
     sock: {
       serverProps: { profilePicPrivacyToken: true },
@@ -418,7 +418,11 @@ test('reloads and caches the original avatar after its Redis cache is cleared wi
     withTimeout: async (promise: Promise<any>) => await promise,
     downloadOriginalAvatar: async (url: string) => {
       resizedUrl = url
-      return resized
+      return original
+    },
+    cacheAvatarVariants: async (jid: string, originalBuffer: Buffer) => {
+      cachedJid = jid
+      cachedOriginal = originalBuffer
     }
   }
 
@@ -428,7 +432,8 @@ test('reloads and caches the original avatar after its Redis cache is cleared wi
   assert.equal(requestedType, 'image')
   assert.equal(fakeBot.sock.serverProps.profilePicPrivacyToken, false)
   assert.equal(resizedUrl, 'https://pps.whatsapp.net/avatar.jpg')
-  assert.deepEqual(writes, [[`ui:auth:avatar:${jid}`, resized]])
+  assert.equal(cachedJid, jid)
+  assert.equal(cachedOriginal, original)
 })
 
 test('uses a known contact avatar URL without waiting for a WhatsApp lookup', async () => {
@@ -452,10 +457,11 @@ test('uses a known contact avatar URL without waiting for a WhatsApp lookup', as
       resizedUrl = url
       return Buffer.from('resized-avatar')
     },
+    cacheAvatarVariants: async () => {},
     redis: { set: async () => {} }
   }
 
-  await Bot.prototype.fetchAndCacheAvatar.call(fakeBot, jid, `avatar:${jid}`)
+  await Bot.prototype.fetchAndCacheAvatar.call(fakeBot, jid)
 
   assert.equal(lookups, 0)
   assert.equal(resizedUrl, sourceUrl)

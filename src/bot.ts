@@ -610,21 +610,22 @@ export class Bot {
     jid = this.contactCache.canonicalJid(jid)
     if (!jid || !this.sock) return
 
-    const cacheKey = `ui:${this.authKey}:avatar:${jid}`
-    const cached = await this.redis.getBuffer(cacheKey)
-    if (cached) return
-
     const existing = this.avatarLoads.get(jid)
     if (existing) return existing
     if ((this.avatarFailures.get(jid) || 0) > Date.now()) return
 
-    const load = this.queueAvatarLoad(() => this.fetchAndCacheAvatar(jid, cacheKey))
+    const load = this.queueAvatarLoad(() => this.fetchAndCacheAvatar(jid))
       .finally(() => this.avatarLoads.delete(jid))
     this.avatarLoads.set(jid, load)
     return load
   }
 
-  async fetchAndCacheAvatar(jid: string, cacheKey: string): Promise<void> {
+  static avatarKey(authKey: string, jid: string, size: 'small' | 'large'): string {
+    const base = `ui:${authKey}:avatar:${jid}`
+    return size === 'large' ? `${base}:lg` : base
+  }
+
+  async fetchAndCacheAvatar(jid: string): Promise<void> {
     const contact = this.contactCache.contactForJid(jid)
     const imgUrl = contact?.imgUrl
     let sourceUrl = imgUrl && imgUrl !== 'changed' && imgUrl.startsWith('https://') ? imgUrl : ''
@@ -632,7 +633,7 @@ export class Bot {
     if (sourceUrl) {
       const avatar = await this.downloadOriginalAvatar(sourceUrl)
       if (avatar) {
-        await this.redis.set(cacheKey, avatar)
+        await this.cacheAvatarVariants(jid, avatar)
         this.avatarFailures.delete(jid)
         return
       }
@@ -669,7 +670,7 @@ export class Bot {
 
     const avatar = await this.downloadOriginalAvatar(sourceUrl)
     if (avatar) {
-      await this.redis.set(cacheKey, avatar)
+      await this.cacheAvatarVariants(jid, avatar)
       this.avatarFailures.delete(jid)
     } else {
       this.avatarFailures.set(jid, Date.now() + 5 * 60 * 1000)
@@ -745,14 +746,15 @@ export class Bot {
   // Build and cache both a small thumbnail (low memory for the chat list) and a
   // full-resolution re-encode (for displaying the avatar large in the popup).
   async cacheAvatarVariants(jid: string, original: Buffer) {
-    const base = `ui:${this.authKey}:avatar:${jid}`
+    const smallKey = Bot.avatarKey(this.authKey, jid, 'default')
+    const largeKey = Bot.avatarKey(this.authKey, jid, 'large')
     const [small, large] = await Promise.all([
       sharp(original).rotate().resize({ width: 96, height: 96, fit: 'cover', position: 'centre' }).webp({ quality: 82 }).toBuffer(),
       sharp(original).rotate().webp({ quality: 92 }).toBuffer()
     ])
     await Promise.all([
-      this.redis.set(base, small),
-      this.redis.set(`${base}:lg`, large)
+      this.redis.set(smallKey, small),
+      this.redis.set(largeKey, large)
     ])
   }
 

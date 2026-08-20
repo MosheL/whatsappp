@@ -312,13 +312,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     try {
       const botId = url.searchParams.get('bot') || ''
       let jid = url.searchParams.get('jid') || ''
+      const size = url.searchParams.get('size') === 'large' ? 'large' : 'default'
       const bot = bots.get(botId)
       if (!bot || !jid) {
         sendJson(res, 404, { error: 'לא נמצא' })
         return
       }
       jid = bot.contactCache.canonicalJid(jid)
-      const cacheKey = `ui:${bot.authKey}:avatar:${jid}`
+      const cacheKey = Bot.avatarKey(bot.authKey, jid, size)
       const cached = await bot.redis.getBuffer(cacheKey)
       if (cached) {
         res.writeHead(200, {
@@ -327,6 +328,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         })
         res.end(cached)
       } else {
+        // Populate both small + large on the first fetch, then re-read the key.
         await bot.loadAvatar(jid)
         const refreshed = await bot.redis.getBuffer(cacheKey)
         if (refreshed) {

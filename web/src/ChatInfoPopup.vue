@@ -30,7 +30,7 @@ const nameDraft = ref('')
 const descDraft = ref('')
 
 function avatarSrc() {
-  return avatarFailed.value ? '' : avatarUrl(props.chat, props.selectedBot)
+  return avatarFailed.value ? '' : avatarUrl(props.chat, props.selectedBot, true)
 }
 
 // -------- Avatar lightbox (view original large) --------
