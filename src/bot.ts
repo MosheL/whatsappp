@@ -843,6 +843,18 @@ export class Bot {
     return this.sock.groupLeave(jid)
   }
 
+  async groupUpdate(jid: string, subject?: string, description?: string) {
+    if (!this.sock) throw new Error('Socket not connected')
+    jid = this.contactCache.resolveOutgoingJid(jid)
+    if (!isJidGroup(jid)) throw new Error('Not a group')
+    if (subject !== undefined && subject !== null) {
+      await this.sock.groupUpdateSubject(jid, String(subject))
+    }
+    if (description !== undefined && description !== null) {
+      await this.sock.groupUpdateDescription(jid, String(description))
+    }
+  }
+
   async sendText(jid: string, text: string, quotedId = '', quotedJid = '', mentions: string[] = []) {
     if (!this.sock) throw new Error('Socket not connected')
     jid = this.contactCache.resolveOutgoingJid(jid)

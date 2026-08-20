@@ -8,7 +8,7 @@ const props = defineProps({
   participants: { type: Array, default: () => [] },
   contacts: { type: Array, default: () => [] }
 })
-const emit = defineEmits(['close', 'leave-group', 'refresh-participants'])
+const emit = defineEmits(['close', 'leave-group', 'refresh-participants', 'chat-changed'])
 
 // -------- Window state (drag / resize, persisted) --------
 
@@ -91,12 +91,20 @@ function startResize(event) {
 // -------- Group info / actions --------
 
 const isGroup = ref(false)
+const subject = ref('')
 const description = ref('')
 const infoLoading = ref(false)
 const addPhone = ref('')
 const adding = ref(false)
 const actionError = ref('')
 const avatarFailed = ref(false)
+
+// -------- Edit group name / description --------
+const editingName = ref(false)
+const editingDesc = ref(false)
+const savingEdit = ref(false)
+const nameDraft = ref('')
+const descDraft = ref('')
 
 function avatarSrc() {
   return avatarFailed.value ? '' : avatarUrl(props.chat, props.selectedBot)
@@ -125,16 +133,72 @@ function api(path, options = {}) {
   })
 }
 
-async function loadDescription() {
+async function loadGroupInfo() {
   if (!isGroup.value || !props.chat?.jid) return
   infoLoading.value = true
   try {
     const params = new URLSearchParams({ bot: props.selectedBot, jid: props.chat.jid })
     const data = await api(`/api/group-participants?${params}`)
+    subject.value = data.info?.subject ?? props.chat.name ?? ''
     description.value = data.info?.description || ''
   } catch {}
   finally {
     infoLoading.value = false
+  }
+}
+
+function startEditName() {
+  if (savingEdit.value) return
+  nameDraft.value = subject.value || props.chat?.name || ''
+  editingName.value = true
+}
+function startEditDesc() {
+  if (savingEdit.value) return
+  descDraft.value = description.value || ''
+  editingDesc.value = true
+}
+function cancelEditName() {
+  editingName.value = false
+}
+function cancelEditDesc() {
+  editingDesc.value = false
+}
+async function saveGroupUpdate() {
+  if (savingEdit.value || !props.chat?.jid) return
+  // Trim; allow empty description but require a non-empty name.
+  const nextName = nameDraft.value.trim()
+  const nextDesc = descDraft.value
+  if (editingName.value && !nextName) return
+  savingEdit.value = true
+  actionError.value = ''
+  const prevSubject = subject.value
+  const prevDescription = description.value
+  try {
+    await api('/api/group-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        bot: props.selectedBot,
+        jid: props.chat.jid,
+        subject: editingName.value ? nextName : undefined,
+        description: editingDesc.value ? nextDesc : undefined
+      })
+    })
+    if (editingName.value) {
+      subject.value = nextName
+      editingName.value = false
+    }
+    if (editingDesc.value) {
+      description.value = nextDesc
+      editingDesc.value = false
+    }
+    emit('chat-changed')
+  } catch (err) {
+    actionError.value = err.message
+    subject.value = prevSubject
+    description.value = prevDescription
+  } finally {
+    savingEdit.value = false
   }
 }
 
@@ -223,13 +287,16 @@ function onLeaveGroup() {
 
 watch(() => props.chat, (chat) => {
   isGroup.value = Boolean(chat?.isGroup)
+  subject.value = chat?.name || ''
   description.value = ''
   addPhone.value = ''
   actionError.value = ''
   avatarFailed.value = false
   showContactPicker.value = false
   contactSearch.value = ''
-  if (isGroup.value) loadDescription()
+  editingName.value = false
+  editingDesc.value = false
+  if (isGroup.value) loadGroupInfo()
 }, { immediate: true })
 
 onMounted(() => {
@@ -272,7 +339,23 @@ onUnmounted(() => {
           @click="openOriginalAvatar()"
         >{{ chat?.name ? initials(chat) : (chat?.jid || '?').slice(0, 2) }}</span>
         <div class="chat-info-identity">
-          <strong class="chat-info-name" dir="auto">{{ chat?.name || chat?.jid || '' }}</strong>
+          <div class="chat-info-name-row">
+            <template v-if="editingName">
+              <input
+                v-model="nameDraft"
+                class="chat-info-edit-input"
+                :disabled="savingEdit"
+                @keydown.enter="saveGroupUpdate"
+                @keydown.esc="cancelEditName"
+              />
+              <button type="button" class="chat-info-edit-btn" :disabled="savingEdit || !nameDraft.trim()" @click="saveGroupUpdate" title="שמור">✓</button>
+              <button type="button" class="chat-info-edit-btn" :disabled="savingEdit" @click="cancelEditName" title="ביטול">×</button>
+            </template>
+            <template v-else>
+              <strong class="chat-info-name" dir="auto">{{ subject || chat?.name || chat?.jid || '' }}</strong>
+              <button v-if="isGroup" type="button" class="chat-info-edit-pencil" title="עריכת שם" @click="startEditName">✏️</button>
+            </template>
+          </div>
           <span v-if="chat?.phoneNumber" class="chat-info-phone" dir="ltr">{{ chat.phoneNumber }}</span>
           <span v-else-if="isGroup" class="chat-info-phone">קבוצה</span>
         </div>
@@ -280,10 +363,25 @@ onUnmounted(() => {
 
       <!-- Group description -->
       <div v-if="isGroup" class="chat-info-desc">
-        <span class="chat-info-desc-label">תיאור</span>
-        <p v-if="infoLoading" class="chat-info-empty">טוען…</p>
+        <div class="chat-info-desc-head">
+          <span class="chat-info-desc-label">תיאור</span>
+          <button v-if="!editingDesc" type="button" class="chat-info-edit-pencil" title="עריכת תיאור" @click="startEditDesc">✏️</button>
+        </div>
+        <textarea
+          v-if="editingDesc"
+          v-model="descDraft"
+          class="chat-info-desc-input"
+          rows="3"
+          :disabled="savingEdit"
+          @keydown.esc="cancelEditDesc"
+        ></textarea>
+        <div v-else-if="infoLoading" class="chat-info-empty">טוען…</div>
         <p v-else-if="description" class="chat-info-desc-text" dir="auto">{{ description }}</p>
         <p v-else class="chat-info-empty">אין תיאור קבוצה</p>
+        <div v-if="editingDesc" class="chat-info-desc-actions">
+          <button type="button" class="chat-info-action-btn" :disabled="savingEdit" @click="saveGroupUpdate">{{ savingEdit ? 'שומר…' : '✓ שמור' }}</button>
+          <button type="button" class="chat-info-cancel-btn" :disabled="savingEdit" @click="cancelEditDesc">ביטול</button>
+        </div>
       </div>
 
       <!-- Add member: by phone -->

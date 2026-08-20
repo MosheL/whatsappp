@@ -466,6 +466,21 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/group-update') {
+    const parsed = await readBotJson(req, res)
+    if (!parsed) return
+    const { data, bot } = parsed
+    try {
+      const subject = typeof data.subject === 'string' ? data.subject : undefined
+      const description = typeof data.description === 'string' ? data.description : undefined
+      await bot.groupUpdate(data.jid, subject, description)
+      sendJson(res, 200, { ok: true })
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/media') {
     try {
       const bot = bots.get(url.searchParams.get('bot') || '')
