@@ -1691,7 +1691,7 @@ onUnmounted(() => {
 
   <Teleport to="body">
     <SearchPopup v-if="showSearchPopup" :selected-bot="selectedBot" :current-chat="selectedChat" @close="showSearchPopup = false" />
-    <ChatInfoPopup v-if="showChatInfo && currentChat" :selected-bot="selectedBot" :chat="currentChat" :participants="groupParticipants" @close="showChatInfo = false" @refresh-participants="loadGroupParticipants(selectedBot, selectedChat)" @leave-group="leaveGroup" />
+    <ChatInfoPopup v-if="showChatInfo && currentChat" :selected-bot="selectedBot" :chat="currentChat" :participants="groupParticipants" :contacts="contacts" @close="showChatInfo = false" @refresh-participants="loadGroupParticipants(selectedBot, selectedChat)" @leave-group="leaveGroup" />
   </Teleport>
 
   <Teleport to="body">

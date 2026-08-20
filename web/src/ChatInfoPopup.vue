@@ -1,11 +1,12 @@
 <script setup>
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { initials, avatarUrl } from './helpers.js'
 
 const props = defineProps({
   selectedBot: { type: String, default: '' },
   chat: { type: Object, default: null },
-  participants: { type: Array, default: () => [] }
+  participants: { type: Array, default: () => [] },
+  contacts: { type: Array, default: () => [] }
 })
 const emit = defineEmits(['close', 'leave-group', 'refresh-participants'])
 
@@ -156,6 +157,65 @@ async function addUser() {
   }
 }
 
+// -------- Add member from contacts --------
+
+const showContactPicker = ref(false)
+const contactSearch = ref('')
+const addingContact = ref('')
+
+function searchable(value) {
+  return String(value ?? '').toLowerCase().replace(/@.*$/, '')
+}
+
+function memberIdentities() {
+  return new Set(props.participants.flatMap(p => {
+    const keys = []
+    for (const value of [p?.jid, p?.phoneNumber]) {
+      if (value) keys.push(searchable(String(value).replace(/@.*$/, '')))
+    }
+    return keys
+  }))
+}
+
+const availableContacts = computed(() => {
+  const term = searchable(contactSearch.value).trim()
+  const members = memberIdentities()
+  const list = (props.contacts || []).filter(c => {
+    if (!c?.phoneNumber) return false
+    const id = searchable(c.phoneNumber)
+    const jid = searchable(c.jid || '')
+    if (members.has(id) || members.has(jid)) return false
+    if (!term) return true
+    return searchable(c.name).includes(term) || id.includes(term) || jid.includes(term)
+  })
+  return list.slice(0, 100)
+})
+
+function openContactPicker() {
+  contactSearch.value = ''
+  showContactPicker.value = true
+}
+
+async function addContact(contact) {
+  const phone = contact?.phoneNumber
+  if (addingContact.value || !phone) return
+  addingContact.value = contact.jid || contact.phoneNumber
+  actionError.value = ''
+  try {
+    await api('/api/group-add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bot: props.selectedBot, jid: props.chat.jid, phone })
+    })
+    showContactPicker.value = false
+    emit('refresh-participants')
+  } catch (err) {
+    actionError.value = err.message
+  } finally {
+    addingContact.value = ''
+  }
+}
+
 function onLeaveGroup() {
   if (!confirm('לעזוב את הקבוצה?')) return
   emit('leave-group')
@@ -167,6 +227,8 @@ watch(() => props.chat, (chat) => {
   addPhone.value = ''
   actionError.value = ''
   avatarFailed.value = false
+  showContactPicker.value = false
+  contactSearch.value = ''
   if (isGroup.value) loadDescription()
 }, { immediate: true })
 
@@ -224,18 +286,51 @@ onUnmounted(() => {
         <p v-else class="chat-info-empty">אין תיאור קבוצה</p>
       </div>
 
-      <!-- Add member -->
+      <!-- Add member: by phone -->
       <div v-if="isGroup" class="chat-info-add-row">
         <input
           v-model="addPhone"
           type="tel"
-          placeholder="מספר טלפון להוספה"
+          placeholder="הזן מספר טלפון"
           class="chat-info-add-input"
           @keydown.enter="addUser"
         />
         <button type="button" class="chat-info-action-btn" @click="addUser" :disabled="adding || !addPhone.trim()">
           {{ adding ? 'מוסיף…' : '➕ הוסף' }}
         </button>
+        <button type="button" class="chat-info-action-btn" :disabled="adding" @click="openContactPicker">
+          👥 מאנשי קשר
+        </button>
+      </div>
+
+      <!-- Add member: from contacts -->
+      <div v-if="showContactPicker" class="chat-info-contacts">
+        <div class="chat-info-contacts-head">
+          <input
+            v-model="contactSearch"
+            type="search"
+            placeholder="חיפוש איש קשר"
+            class="chat-info-add-input"
+            autofocus
+          />
+        </div>
+        <div class="chat-info-contacts-list">
+          <p v-if="!availableContacts.length" class="chat-info-empty">אין אנשי קשר זמינים</p>
+          <button
+            v-for="contact in availableContacts"
+            :key="contact.jid || contact.phoneNumber"
+            type="button"
+            class="chat-info-contact"
+            @click="addContact(contact)"
+          >
+            <span class="chat-info-participant-avatar">{{ initials(contact) }}</span>
+            <div class="chat-info-participant-copy">
+              <strong dir="auto">{{ contact.name }}</strong>
+              <small v-if="contact.phoneNumber" dir="ltr">{{ contact.phoneNumber }}</small>
+            </div>
+            <span class="chat-info-contact-add">{{ addingContact === (contact.jid || contact.phoneNumber) ? 'מוסיף…' : '+' }}</span>
+          </button>
+        </div>
       </div>
       <p v-if="actionError" class="chat-info-error">{{ actionError }}</p>
 

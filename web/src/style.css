@@ -3057,3 +3057,52 @@ button {
 .chat-info-leave:hover {
   background: #ffe3e3;
 }
+
+/* ---- Chat info popup: add member from contacts ---- */
+.chat-info-contacts {
+  background: #f2f6f8;
+  border: 1px solid #e3e8ec;
+  border-radius: 8px;
+  margin-top: 8px;
+  max-height: 40vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.chat-info-contacts-head {
+  flex: none;
+  padding: 8px;
+}
+.chat-info-contacts-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 4px 4px;
+}
+.chat-info-contact {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  padding: 6px 8px;
+  text-align: start;
+  width: 100%;
+}
+.chat-info-contact:hover {
+  background: #e4ecef;
+}
+.chat-info-contact-add {
+  align-items: center;
+  background: #166a5b;
+  border-radius: 50%;
+  color: #ffffff;
+  display: flex;
+  flex: none;
+  font-size: 16px;
+  height: 24px;
+  justify-content: center;
+  width: 24px;
+}
