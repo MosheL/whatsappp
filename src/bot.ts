@@ -9,6 +9,7 @@ import {
   proto
 } from '@whiskeysockets/baileys'
 import qrcode from 'qrcode-terminal'
+import sharp from 'sharp'
 import type { WAMessage } from '@whiskeysockets/baileys'
 import type { WAMessageKey, WAUrlInfo } from '@whiskeysockets/baileys/lib/Types/Message.js'
 import type { Chat } from '@whiskeysockets/baileys/lib/Types/Chat.js'
@@ -734,9 +735,16 @@ export class Bot {
         console.error(`${this.label}: avatar too small (${buffer.length} bytes) from ${url.slice(0, 80)}`)
         return undefined
       }
-      return buffer
+      // Re-encode the avatar at its real, full resolution (no downscale to a
+      // tiny thumbnail). Auto-rotate to remove EXIF orientation and output a
+      // clean webp/avatar.jpg at the source size.
+      return await sharp(buffer)
+        .rotate()
+        .resize({ width: 4096, height: 4096, fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 92 })
+        .toBuffer()
     } catch (err: any) {
-      console.error(`${this.label}: failed to download avatar`, err.message, 'from', url.slice(0, 80))
+      console.error(`${this.label}: failed to download/resize avatar`, err.message, 'from', url.slice(0, 80))
       return undefined
     }
   }
