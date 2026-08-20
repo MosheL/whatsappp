@@ -3,7 +3,7 @@ import QRCode from 'qrcode'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useBlob } from './composables/useBlob.js'
 import {
-  formatTime, formatDateFull, formatDateCaption, formatLastSeen, initials, avatarUrl, setAvatarCache, getAvatarCache
+  formatTime, formatDateFull, formatDateCaption, formatLastSeen, initials, avatarUrl, setAvatarCache, getAvatarCache, AVATAR_VERSION
 } from './helpers.js'
 import {
   hasLinkCandidate, linkPreviewHref, linkPreviewHost, linkPreviewImageStyle, messagePreview
@@ -1564,7 +1564,7 @@ onUnmounted(() => {
       @drop.prevent="onDropFile"
     >
       <header class="conversation-head">
-        <img :key="selectedChat" :src="selectedChat && getAvatarCache(selectedChat) !== false ? `/api/avatar?bot=${encodeURIComponent(selectedBot)}&jid=${encodeURIComponent(selectedChat)}` : ''" alt="" class="large-avatar image" loading="lazy" @error="avatarLoaded = false; setAvatarCache(selectedChat, false); $event.target.style.display='none'" @load="avatarLoaded = true; setAvatarCache(selectedChat, true)" />
+        <img :key="selectedChat + AVATAR_VERSION" :src="selectedChat && getAvatarCache(selectedChat) !== false ? `/api/avatar?v=${AVATAR_VERSION}&bot=${encodeURIComponent(selectedBot)}&jid=${encodeURIComponent(selectedChat)}` : ''" alt="" class="large-avatar image" loading="lazy" @error="avatarLoaded = false; setAvatarCache(selectedChat, false); $event.target.style.display='none'" @load="avatarLoaded = true; setAvatarCache(selectedChat, true)" />
         <span :class="['large-avatar', { 'avatar-loaded': avatarLoaded }]">{{ currentChat ? initials(currentChat) : (selectedChat || '?').slice(0, 2) }}</span>
         <div class="conversation-head-copy" title="פרטי שיחה" @click="showChatInfo = true">
           <h1>{{ chatTitle }}</h1>

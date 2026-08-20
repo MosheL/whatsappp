@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { initials, avatarUrl } from './helpers.js'
 import Window from './Window.vue'
 
@@ -32,10 +32,20 @@ const descDraft = ref('')
 function avatarSrc() {
   return avatarFailed.value ? '' : avatarUrl(props.chat, props.selectedBot)
 }
-function openOriginalAvatar() {
+
+// -------- Avatar lightbox (view original large) --------
+const avatarLightbox = ref('')
+
+function openLightbox() {
   const url = avatarSrc()
   if (!url) return
-  window.open(url, '_blank', 'noopener')
+  avatarLightbox.value = url
+}
+function closeLightbox() {
+  avatarLightbox.value = ''
+}
+function openOriginalAvatar() {
+  openLightbox()
 }
 function onAvatarError() {
   avatarFailed.value = true
@@ -415,4 +425,12 @@ watch(() => props.chat, (chat) => {
       </div>
     </div>
   </Window>
+
+  <!-- Avatar lightbox (view original at full size) -->
+  <Teleport to="body">
+    <div v-if="avatarLightbox" class="avatar-lightbox" @click.self="closeLightbox" @keydown.esc="closeLightbox">
+      <button type="button" class="avatar-lightbox-close" title="סגור" @click="closeLightbox">×</button>
+      <img :src="avatarLightbox" alt="" class="avatar-lightbox-img" />
+    </div>
+  </Teleport>
 </template>

@@ -49,5 +49,10 @@ export function getAvatarCache(jid) {
 export function avatarUrl(chat, botId) {
   if (!chat?.jid || !botId) return ''
   if (avatarCache[chat.jid] === false) return ''
-  return `/api/avatar?bot=${encodeURIComponent(botId)}&jid=${encodeURIComponent(chat.jid)}`
+  return `/api/avatar?v=${AVATAR_VERSION}&bot=${encodeURIComponent(botId)}&jid=${encodeURIComponent(chat.jid)}`
 }
+
+// Bump this whenever avatar caching changes to force the browser to
+// refetch from the server instead of a stale cached (resized) copy.
+export const AVATAR_VERSION = '2'
+
