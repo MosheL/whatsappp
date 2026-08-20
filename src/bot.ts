@@ -8,14 +8,13 @@ import {
   makeWASocket,
   proto
 } from '@whiskeysockets/baileys'
-import sharp from 'sharp'
+import qrcode from 'qrcode-terminal'
 import type { WAMessage } from '@whiskeysockets/baileys'
 import type { WAMessageKey, WAUrlInfo } from '@whiskeysockets/baileys/lib/Types/Message.js'
 import type { Chat } from '@whiskeysockets/baileys/lib/Types/Chat.js'
 import type { Contact } from '@whiskeysockets/baileys/lib/Types/Contact.js'
 import { deleteHSetKeys, useRedisAuthStateWithHSet } from 'baileys-redis-auth'
 import { EventEmitter } from 'events'
-import qrcode from 'qrcode-terminal'
 import type { UiChat, UiMessage, LinkPreviewData, ContactData, MessagePatch, BotStatus, GroupMention } from './types.ts'
 import {
   ContactCache,
@@ -630,9 +629,9 @@ export class Bot {
     let sourceUrl = imgUrl && imgUrl !== 'changed' && imgUrl.startsWith('https://') ? imgUrl : ''
     let avatarNotFound = false
     if (sourceUrl) {
-      const resized = await this.downloadAndResizeAvatar(sourceUrl)
-      if (resized) {
-        await this.redis.set(cacheKey, resized)
+      const avatar = await this.downloadOriginalAvatar(sourceUrl)
+      if (avatar) {
+        await this.redis.set(cacheKey, avatar)
         this.avatarFailures.delete(jid)
         return
       }
@@ -667,9 +666,9 @@ export class Bot {
       return
     }
 
-    const resized = await this.downloadAndResizeAvatar(sourceUrl)
-    if (resized) {
-      await this.redis.set(cacheKey, resized)
+    const avatar = await this.downloadOriginalAvatar(sourceUrl)
+    if (avatar) {
+      await this.redis.set(cacheKey, avatar)
       this.avatarFailures.delete(jid)
     } else {
       this.avatarFailures.set(jid, Date.now() + 5 * 60 * 1000)
@@ -710,7 +709,7 @@ export class Bot {
     }
   }
 
-  async downloadAndResizeAvatar(url: string): Promise<Buffer | undefined> {
+  async downloadOriginalAvatar(url: string): Promise<Buffer | undefined> {
     try {
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 15000)
@@ -735,15 +734,13 @@ export class Bot {
         console.error(`${this.label}: avatar too small (${buffer.length} bytes) from ${url.slice(0, 80)}`)
         return undefined
       }
-      return await sharp(buffer)
-        .resize(100, 100, { fit: 'cover', position: 'centre' })
-        .webp({ quality: 80 })
-        .toBuffer()
+      return buffer
     } catch (err: any) {
-      console.error(`${this.label}: failed to download/resize avatar`, err.message, 'from', url.slice(0, 80))
+      console.error(`${this.label}: failed to download avatar`, err.message, 'from', url.slice(0, 80))
       return undefined
     }
   }
+
 
   async groupParticipants(jid: string): Promise<GroupMention[]> {
     if (!this.sock) throw new Error('Socket not connected')
@@ -811,8 +808,39 @@ export class Bot {
       if (name !== 'Unknown participant' && !/^\+?\d+$/.test(name)) {
         for (const id of identifiers) sharedWhatsAppNames.set(id, name)
       }
-      return { jid: mentionJid, name, phoneNumber }
+      return { jid: mentionJid, name, phoneNumber, admin: participant.admin || undefined }
     })).then(participants => participants.filter(participant => participant.jid))
+  }
+
+  async groupInfo(jid: string) {
+    if (!this.sock) throw new Error('Socket not connected')
+    jid = this.contactCache.resolveOutgoingJid(jid)
+    if (!isJidGroup(jid)) return { subject: '', description: '', creation: 0, participantCount: 0 }
+    const group = await this.sock.groupMetadata(jid)
+    return {
+      subject: group.subject || '',
+      description: group.desc || '',
+      creation: group.creation || 0,
+      participantCount: (group.participants || []).length
+    }
+  }
+
+  async groupAddParticipant(jid: string, phone: string) {
+    if (!this.sock) throw new Error('Socket not connected')
+    jid = this.contactCache.resolveOutgoingJid(jid)
+    if (!isJidGroup(jid)) throw new Error('Not a group')
+    let digits = String(phone || '').replace(/[^\d]/g, '')
+    if (digits.startsWith('0') && digits.length > 1) digits = `972${digits.slice(1)}`
+    const target = this.contactCache.resolveOutgoingJid(digits)
+    if (!target) throw new Error('לא ניתן לפתור את המספר')
+    return this.sock.groupParticipantsUpdate(jid, [target], 'add')
+  }
+
+  async groupLeave(jid: string) {
+    if (!this.sock) throw new Error('Socket not connected')
+    jid = this.contactCache.resolveOutgoingJid(jid)
+    if (!isJidGroup(jid)) throw new Error('Not a group')
+    return this.sock.groupLeave(jid)
   }
 
   async sendText(jid: string, text: string, quotedId = '', quotedJid = '', mentions: string[] = []) {

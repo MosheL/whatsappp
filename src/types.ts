@@ -94,6 +94,8 @@ export type GroupMention = {
   jid: string
   name: string
   phoneNumber: string
+  /** 'admin' | 'superadmin' | undefined */
+  admin?: string
 }
 
 export type LocationData = {

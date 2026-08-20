@@ -213,7 +213,7 @@ test('uses LID participant identifiers for mentions in LID-addressed groups', as
   fakeBot.groupParticipants = () => participants
   await Bot.prototype.sendText.call(fakeBot, 'group@g.us', '@Alice hello', '', '', [lid, phone, 'stranger@lid'])
 
-  assert.deepEqual(participants, [{ jid: lid, name: 'WhatsApp Alice', phoneNumber: phone }])
+  assert.deepEqual(participants, [{ jid: lid, name: 'WhatsApp Alice', phoneNumber: phone, admin: undefined }])
   assert.deepEqual(sentContent.mentions, [lid])
 })
 
@@ -247,7 +247,7 @@ test('uses the WhatsApp push name from stored group messages when contact metada
 
   const participants = await Bot.prototype.groupParticipants.call(fakeBot, 'group@g.us')
 
-  assert.deepEqual(participants, [{ jid: lid, name: 'WhatsApp Alice', phoneNumber: phone }])
+  assert.deepEqual(participants, [{ jid: lid, name: 'WhatsApp Alice', phoneNumber: phone, admin: undefined }])
 })
 
 test('uses a named direct chat for a group participant when contact metadata has no name', async () => {
@@ -279,7 +279,7 @@ test('uses a named direct chat for a group participant when contact metadata has
 
   const participants = await Bot.prototype.groupParticipants.call(fakeBot, 'group@g.us')
 
-  assert.deepEqual(participants, [{ jid: lid, name: 'WhatsApp Alice', phoneNumber: phone }])
+  assert.deepEqual(participants, [{ jid: lid, name: 'WhatsApp Alice', phoneNumber: phone, admin: undefined }])
 })
 
 test('reuses a WhatsApp push name learned from another group', async () => {
@@ -311,7 +311,7 @@ test('reuses a WhatsApp push name learned from another group', async () => {
 
   const participants = await Bot.prototype.groupParticipants.call(fakeBot, 'group@g.us')
 
-  assert.deepEqual(participants, [{ jid: lid, name: 'WhatsApp Alice', phoneNumber: phone }])
+  assert.deepEqual(participants, [{ jid: lid, name: 'WhatsApp Alice', phoneNumber: phone, admin: undefined }])
 })
 
 test('reuses a WhatsApp name learned by another bot connection', async () => {
@@ -346,7 +346,7 @@ test('reuses a WhatsApp name learned by another bot connection', async () => {
   await Bot.prototype.groupParticipants.call(namedBot, 'group@g.us')
   const participants = await Bot.prototype.groupParticipants.call(unknownBot, 'group@g.us')
 
-  assert.deepEqual(participants, [{ jid: lid, name: 'Shared Alice', phoneNumber: phone }])
+  assert.deepEqual(participants, [{ jid: lid, name: 'Shared Alice', phoneNumber: phone, admin: undefined }])
 })
 
 test('shares a resolved direct-chat name with another bot connection', async () => {
@@ -382,10 +382,10 @@ test('shares a resolved direct-chat name with another bot connection', async () 
   await Bot.prototype.groupParticipants.call(namedBot, 'group@g.us')
   const participants = await Bot.prototype.groupParticipants.call(unknownBot, 'group@g.us')
 
-  assert.deepEqual(participants, [{ jid: lid, name: 'Direct Alice', phoneNumber: phone }])
+  assert.deepEqual(participants, [{ jid: lid, name: 'Direct Alice', phoneNumber: phone, admin: undefined }])
 })
 
-test('reloads and resizes an avatar after its Redis cache is cleared without requiring a chat entry', async () => {
+test('reloads and caches the original avatar after its Redis cache is cleared without requiring a chat entry', async () => {
   const jid = '972501234567@s.whatsapp.net'
   const resized = Buffer.from('resized-avatar')
   const writes: any[] = []
@@ -416,7 +416,7 @@ test('reloads and resizes an avatar after its Redis cache is cleared without req
     queueAvatarLoad: async (task: () => Promise<void>) => await task(),
     fetchAndCacheAvatar: Bot.prototype.fetchAndCacheAvatar,
     withTimeout: async (promise: Promise<any>) => await promise,
-    downloadAndResizeAvatar: async (url: string) => {
+    downloadOriginalAvatar: async (url: string) => {
       resizedUrl = url
       return resized
     }
@@ -448,7 +448,7 @@ test('uses a known contact avatar URL without waiting for a WhatsApp lookup', as
     contactCache: { contactForJid: () => ({ imgUrl: sourceUrl }) },
     withTimeout: async (promise: Promise<any>) => await promise,
     isAvatarNotFoundError: Bot.prototype.isAvatarNotFoundError,
-    downloadAndResizeAvatar: async (url: string) => {
+    downloadOriginalAvatar: async (url: string) => {
       resizedUrl = url
       return Buffer.from('resized-avatar')
     },
@@ -519,7 +519,7 @@ test('stops after a definitive missing-avatar response and caches the miss', asy
     contactCache: { contactForJid: () => undefined },
     withTimeout: async (promise: Promise<any>) => await promise,
     isAvatarNotFoundError: Bot.prototype.isAvatarNotFoundError,
-    downloadAndResizeAvatar: async () => undefined,
+    downloadOriginalAvatar: async () => undefined,
     redis: { set: async () => {} }
   }
 

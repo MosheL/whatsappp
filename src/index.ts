@@ -85,6 +85,15 @@ if (!apiTestMode) {
   ])
 }
 
+function sniffImageMime(buffer: Buffer): string {
+  if (!buffer || buffer.length < 12) return 'application/octet-stream'
+  if (buffer[0] === 0xFF && buffer[1] === 0xD8) return 'image/jpeg'
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) return 'image/png'
+  if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) return 'image/gif'
+  if (buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 && buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) return 'image/webp'
+  return 'application/octet-stream'
+}
+
 function sendJson(res: http.ServerResponse, status: number, data: unknown) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -313,7 +322,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       const cached = await bot.redis.getBuffer(cacheKey)
       if (cached) {
         res.writeHead(200, {
-          'Content-Type': 'image/webp',
+          'Content-Type': sniffImageMime(cached),
           'Cache-Control': 'private, max-age=86400'
         })
         res.end(cached)
@@ -322,7 +331,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         const refreshed = await bot.redis.getBuffer(cacheKey)
         if (refreshed) {
           res.writeHead(200, {
-            'Content-Type': 'image/webp',
+            'Content-Type': sniffImageMime(refreshed),
             'Cache-Control': 'private, max-age=86400'
           })
           res.end(refreshed)
@@ -423,7 +432,34 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return
     }
     try {
-      sendJson(res, 200, { participants: await bot.groupParticipants(jid) })
+      const [participants, info] = await Promise.all([bot.groupParticipants(jid), bot.groupInfo(jid)])
+      sendJson(res, 200, { participants, info })
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/group-add') {
+    const parsed = await readBotJson(req, res)
+    if (!parsed) return
+    const { data, bot } = parsed
+    try {
+      await bot.groupAddParticipant(data.jid, data.phone)
+      sendJson(res, 200, { ok: true })
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/group-leave') {
+    const parsed = await readBotJson(req, res)
+    if (!parsed) return
+    const { data, bot } = parsed
+    try {
+      await bot.groupLeave(data.jid)
+      sendJson(res, 200, { ok: true })
     } catch (err: any) {
       sendJson(res, 500, { error: err.message })
     }

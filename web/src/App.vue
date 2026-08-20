@@ -12,6 +12,7 @@ import { messageStatusRank, mergeMessagePatch, reactionUserKey } from '../../src
 import ChatList from './ChatList.vue'
 import ChatThread from './ChatThread.vue'
 import SearchPopup from './SearchPopup.vue'
+import ChatInfoPopup from './ChatInfoPopup.vue'
 
 const authenticated = ref(false)
 const password = ref('')
@@ -42,6 +43,7 @@ const showUploadModal = ref(false)
 const showForwardPopup = ref(false)
 const showContactPicker = ref(false)
 const showSearchPopup = ref(localStorage.getItem('wa-ui-search-open') === 'true')
+const showChatInfo = ref(false)
 const selectedContactForSend = ref(null)
 const contactSearch = ref('')
 const showComposerMenu = ref(false)
@@ -648,6 +650,25 @@ async function loadGroupParticipants(bot = selectedBot.value, jid = selectedChat
     if (selectedBot.value === bot && selectedChat.value === jid) groupParticipants.value = data.participants || []
   } catch {
     if (selectedBot.value === bot && selectedChat.value === jid) groupParticipants.value = []
+  }
+}
+
+async function leaveGroup() {
+  const jid = selectedChat.value
+  if (!jid || !selectedBot.value) return
+  try {
+    await api('/api/group-leave', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bot: selectedBot.value, jid })
+    })
+    showChatInfo.value = false
+    selectedChat.value = ''
+    messages.value = []
+    groupParticipants.value = []
+    await loadChats()
+  } catch (err) {
+    error.value = err.message
   }
 }
 
@@ -1545,7 +1566,7 @@ onUnmounted(() => {
       <header class="conversation-head">
         <img :key="selectedChat" :src="selectedChat && getAvatarCache(selectedChat) !== false ? `/api/avatar?bot=${encodeURIComponent(selectedBot)}&jid=${encodeURIComponent(selectedChat)}` : ''" alt="" class="large-avatar image" loading="lazy" @error="avatarLoaded = false; setAvatarCache(selectedChat, false); $event.target.style.display='none'" @load="avatarLoaded = true; setAvatarCache(selectedChat, true)" />
         <span :class="['large-avatar', { 'avatar-loaded': avatarLoaded }]">{{ currentChat ? initials(currentChat) : (selectedChat || '?').slice(0, 2) }}</span>
-        <div>
+        <div class="conversation-head-copy" title="פרטי שיחה" @click="showChatInfo = true">
           <h1>{{ chatTitle }}</h1>
           <p>
             {{ chatSubtitle }}
@@ -1670,6 +1691,7 @@ onUnmounted(() => {
 
   <Teleport to="body">
     <SearchPopup v-if="showSearchPopup" :selected-bot="selectedBot" :current-chat="selectedChat" @close="showSearchPopup = false" />
+    <ChatInfoPopup v-if="showChatInfo && currentChat" :selected-bot="selectedBot" :chat="currentChat" :participants="groupParticipants" @close="showChatInfo = false" @refresh-participants="loadGroupParticipants(selectedBot, selectedChat)" @leave-group="leaveGroup" />
   </Teleport>
 
   <Teleport to="body">
