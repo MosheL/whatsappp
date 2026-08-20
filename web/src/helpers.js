@@ -55,5 +55,5 @@ export function avatarUrl(chat, botId, large = false) {
 
 // Bump this whenever avatar caching changes to force the browser to
 // refetch from the server instead of a stale cached (resized) copy.
-export const AVATAR_VERSION = '3'
+export const AVATAR_VERSION = '4'
 
