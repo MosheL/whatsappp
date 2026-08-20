@@ -620,7 +620,7 @@ export class Bot {
     return load
   }
 
-  static avatarKey(authKey: string, jid: string, size: 'small' | 'large'): string {
+  static avatarKey(authKey: string, jid: string, size: 'default' | 'large'): string {
     const base = `ui:${authKey}:avatar:${jid}`
     return size === 'large' ? `${base}:lg` : base
   }
