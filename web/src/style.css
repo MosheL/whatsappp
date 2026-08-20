@@ -3339,3 +3339,8 @@ button {
   flex-direction: column;
   min-height: 0;
 }
+
+/* Conversation-header avatar is clickable (opens full-size profile image) */
+.conversation-head .large-avatar {
+  cursor: pointer;
+}

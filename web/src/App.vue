@@ -686,11 +686,17 @@ async function markAllRead() {
   }
 }
 
+// Open the selected conversation's full-resolution avatar in a new tab.
+function openChatAvatar() {
+  if (!selectedChat.value || !selectedBot.value) return
+  const url = `/api/avatar?size=large&v=${AVATAR_VERSION}&bot=${encodeURIComponent(selectedBot.value)}&jid=${encodeURIComponent(selectedChat.value)}`
+  window.open(url, '_blank', 'noopener')
+}
+
 function clearLocalUnread(jid = selectedChat.value) {
   const chat = chats.value.find(item => item.jid === jid)
   if (chat) chat.unread = 0
 }
-
 async function markChatLocalRead(jid = selectedChat.value) {
   if (!jid || !selectedBot.value || !authenticated.value) return
   clearLocalUnread(jid)
@@ -1564,8 +1570,8 @@ onUnmounted(() => {
       @drop.prevent="onDropFile"
     >
       <header class="conversation-head">
-        <img :key="selectedChat + AVATAR_VERSION" :src="selectedChat && getAvatarCache(selectedChat) !== false ? `/api/avatar?v=${AVATAR_VERSION}&bot=${encodeURIComponent(selectedBot)}&jid=${encodeURIComponent(selectedChat)}` : ''" alt="" class="large-avatar image" loading="lazy" @error="avatarLoaded = false; setAvatarCache(selectedChat, false); $event.target.style.display='none'" @load="avatarLoaded = true; setAvatarCache(selectedChat, true)" />
-        <span :class="['large-avatar', { 'avatar-loaded': avatarLoaded }]">{{ currentChat ? initials(currentChat) : (selectedChat || '?').slice(0, 2) }}</span>
+        <img :key="selectedChat + AVATAR_VERSION" :src="selectedChat && getAvatarCache(selectedChat) !== false ? `/api/avatar?v=${AVATAR_VERSION}&bot=${encodeURIComponent(selectedBot)}&jid=${encodeURIComponent(selectedChat)}` : ''" alt="" class="large-avatar image" loading="lazy" title="הצג תמונת פרופיל בגודל מלא" @click="openChatAvatar" @error="avatarLoaded = false; setAvatarCache(selectedChat, false); $event.target.style.display='none'" @load="avatarLoaded = true; setAvatarCache(selectedChat, true)" />
+        <span :class="['large-avatar', { 'avatar-loaded': avatarLoaded }]" title="הצגה תמונת פרופיל בגודל מלא" @click="openChatAvatar">{{ currentChat ? initials(currentChat) : (selectedChat || '?').slice(0, 2) }}</span>
         <div class="conversation-head-copy" title="פרטי שיחה" @click="showChatInfo = true">
           <h1>{{ chatTitle }}</h1>
           <p>
