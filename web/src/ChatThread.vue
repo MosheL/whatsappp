@@ -373,9 +373,11 @@ function toggleMessageMenu(event, message) {
 // Conditional scroll: only actually moves to the bottom when the user is
 // already near the bottom. Otherwise the user stays put and we bump the
 // "new messages" counter so a floating button can offer to jump down.
-function scrollToBottom() {
+function scrollToBottom(message) {
   if (!isNearBottom.value) {
-    newMessageCount.value += 1
+    // Messages sent by the current user should not appear as unread in the
+    // floating indicator while they are scrolled away from the bottom.
+    if (message?.fromMe === false) newMessageCount.value += 1
     return
   }
   performScrollToBottom()

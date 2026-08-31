@@ -816,13 +816,13 @@ button {
   cursor: pointer;
   display: inline-flex;
   flex: none;
-  height: 36px;
+  height: 33px;
   justify-content: center;
-  margin-inline-end: -20px;
+  margin-inline-end: -11px;
   position: sticky;
   bottom: -10px;
   transition: background-color 0.15s ease, transform 0.15s ease;
-  width: 36px;
+  width: 33px;
   z-index: 4;
 }
 

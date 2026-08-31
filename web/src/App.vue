@@ -409,7 +409,7 @@ function connectWs() {
       if (data.message.jid === selectedChat.value) {
         upsertMessage(data.message)
         if (!data.message.fromMe) autoMarkChatRead(data.message.jid)
-        scrollToBottom()
+        scrollToBottom(data.message)
       }
     }
     if (data.type === 'message') scheduleBotRefresh()
@@ -886,7 +886,7 @@ async function sendText() {
     })
     if (data.message && selectedChat.value === outgoingChat) {
       upsertMessage(data.message)
-      scrollToBottom()
+      scrollToBottom(data.message)
     }
   } catch (err) {
     error.value = err.message
@@ -938,7 +938,7 @@ async function sendContact() {
     })
     if (data.message && selectedBot.value === outgoingBot && selectedChat.value === outgoingChat) {
       upsertMessage(data.message)
-      scrollToBottom()
+      scrollToBottom(data.message)
     }
   } catch (err) {
     error.value = err.message
@@ -990,7 +990,7 @@ async function forwardMessage(sourceJid, sourceId, targetJid) {
     })
     if (data.message && selectedChat.value === targetJid) {
       upsertMessage(data.message)
-      scrollToBottom()
+      scrollToBottom(data.message)
     }
   } catch (err) {
     error.value = err.message
@@ -1211,7 +1211,7 @@ async function sendFile() {
     const data = await api('/api/send-file', { method: 'POST', body: form })
     if (data.message?.jid === selectedChat.value) {
       upsertMessage(data.message)
-      scrollToBottom()
+      scrollToBottom(data.message)
     }
     // Clear the composer text since it was used as the file caption
     text.value = ''
@@ -1368,9 +1368,9 @@ function clearFile() {
   if (fileInputRef.value) fileInputRef.value.value = ''
 }
 
-function scrollToBottom() {
+function scrollToBottom(message) {
   nextTick(() => {
-    if (threadRef.value) threadRef.value.scrollToBottom()
+    if (threadRef.value) threadRef.value.scrollToBottom(message)
   })
 }
 
