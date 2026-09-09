@@ -6,8 +6,8 @@ import StatusTick from './StatusTick.vue'
 
 const props = defineProps({
   chat: { type: Object, required: true },
-  selectedChat: { type: String, default: '' },
-  chatDropJid: { type: String, default: '' },
+  active: Boolean,
+  dropTarget: Boolean,
   selectedBot: { type: String, default: '' }
 })
 
@@ -59,7 +59,7 @@ const previewText = computed(() => props.chat.lastMessage || '')
 
 <template>
   <div
-    :class="['chat-item', { active: chat.jid === selectedChat, 'drop-target': chat.jid === chatDropJid }]"
+    :class="['chat-item', { active, 'drop-target': dropTarget }]"
     role="button"
     tabindex="0"
     @click="emit('select-chat', chat.jid)"

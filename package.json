@@ -9,7 +9,8 @@
     "build": "vite build",
     "start": "node --experimental-strip-types ./src/index.ts",
     "test": "npm run build && npm run test:unit && npm run test:api",
-    "test:unit": "node --experimental-strip-types --test test/app-sync.test.js test/bot.test.ts test/chat-store.test.ts test/contact-cache.test.ts test/message-processor.test.ts test/message-store.test.ts test/message-utils.test.ts test/message-renderer.test.js",
+    "test:unit": "node --experimental-strip-types --test test/app-sync.test.js test/client-performance.test.js test/bot.test.ts test/chat-store.test.ts test/contact-cache.test.ts test/message-processor.test.ts test/message-store.test.ts test/message-utils.test.ts test/message-renderer.test.js",
+    "test:performance": "node test/client-performance.browser.js",
     "test:api": "node --experimental-strip-types --test test/api.test.ts",
     "test:e2e": "node --env-file-if-exists=.env.e2e --experimental-strip-types --test test/e2e.live.test.ts"
   },

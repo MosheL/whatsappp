@@ -1,5 +1,7 @@
 <script setup>
 import QRCode from 'qrcode'
+import { createRequestPool } from './request-pool.js'
+import { createSearchIndexer, matchesSearch, searchQuery } from './search-index.js'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useBlob } from './composables/useBlob.js'
 import { wsState, connectSocket, disconnectSocket, isOpen, isClosed } from './socket.js'
@@ -72,6 +74,10 @@ const threadRef = ref(null)
 let dragHideTimer
 let linkPreviewTimer
 let lastVisibilityResync = 0
+let sessionReady = false
+const requestPool = createRequestPool()
+let contactsLoadedAt = 0
+let contactsLoadedBot = ''
 let chatLoadRequest = 0
 let messageLoadRequest = 0
 let linkPreviewRequest = 0
@@ -111,7 +117,15 @@ const textEmojiPattern = /(^|[\s([{])(:-\)|:\)|:-D|:D|:-P|:P|:-p|:p|:-\(|:\(|:-\
 const usedEmojis = ref(loadUsedEmojis())
 
 const currentBot = computed(() => bots.value.find(bot => bot.id === selectedBot.value))
-const currentChat = computed(() => chats.value.find(chat => chat.jid === selectedChat.value))
+const chatsById = computed(() => new Map(chats.value.map(chat => [chat.jid, chat])))
+const contactsById = computed(() => {
+  const index = new Map()
+  for (const contact of contacts.value) {
+    for (const key of [contact.jid, contact.phoneNumber]) if (key && !index.has(key)) index.set(key, contact)
+  }
+  return index
+})
+const currentChat = computed(() => chatsById.value.get(selectedChat.value))
 const chatTitle = computed(() => currentChat.value?.name || selectedChat.value || 'בחרו שיחה')
 const chatSubtitle = computed(() => ""/* currentChat.value ? chatAddress(currentChat.value) : selectedChat.value*/)
 const selectedFileName = computed(() => selectedFile.value?.name || '')
@@ -131,33 +145,21 @@ const orderedChats = computed(() => [...chats.value].sort((a, b) => {
   if (aActive !== bActive) return bActive - aActive
   return (b.timestamp || 0) - (a.timestamp || 0)
 }))
+const indexSearch = createSearchIndexer()
+const chatSearchIndex = computed(() => new Map(chats.value.map(chat => [chat.jid, indexSearch(chat)])))
+const contactSearchIndex = computed(() => contacts.value.map(indexSearch))
+const chatIdentityKeys = computed(() => new Set([...chatSearchIndex.value.values()].flatMap(entry => entry.keys)))
 const filteredChats = computed(() => {
-  const term = searchable(search.value).trim()
-  const identityTerm = searchableIdentity(search.value).trim()
+  const query = searchQuery(search.value)
   let list = orderedChats.value.filter(chat => Boolean(chat.isArchived) === showArchived.value)
-  if (!term) return list
-  const phoneTerms = phoneSearchTerms(identityTerm || term)
-  list = list.filter(chat =>
-    searchable(chat.name).includes(term) ||
-    identityMatches(chat.jid, identityTerm) ||
-    identityMatches(chat.displayJid, identityTerm) ||
-    identityMatches(chat.phoneNumber, identityTerm) ||
-    searchable(chat.lastMessage).includes(term) ||
-    phoneTerms.some(phoneTerm => chatPhoneValues(chat).some(value => value.includes(phoneTerm)))
-  )
-  // Also search through contacts that don't have a chat yet
-  const seenIdentities = new Set(chats.value.flatMap(item => identityKeys(item)))
+  if (!query.term) return list
+  list = list.filter(chat => matchesSearch(chatSearchIndex.value.get(chat.jid), query))
+  const seenIdentities = new Set(chatIdentityKeys.value)
   const matchedContacts = []
-  for (const contact of contacts.value) {
-    const keys = identityKeys(contact)
-    if (keys.some(key => seenIdentities.has(key))) continue
-    if (
-      !searchable(contact?.name).includes(term) &&
-      !identityMatches(contact?.jid, identityTerm) &&
-      !identityMatches(contact?.phoneNumber, identityTerm) &&
-      !phoneTerms.some(phoneTerm => [contact?.phoneNumber, contact?.jid].filter(Boolean).some(value => safeText(value).includes(phoneTerm)))
-    ) continue
-    keys.forEach(key => seenIdentities.add(key))
+  for (const entry of contactSearchIndex.value) {
+    if (entry.keys.some(key => seenIdentities.has(key)) || !matchesSearch(entry, query)) continue
+    entry.keys.forEach(key => seenIdentities.add(key))
+    const contact = entry.item
     const jid = contact?.phoneNumber || contact?.jid || ''
     const displayJid = safeText(contact?.phoneNumber || contact?.jid).replace(/@.*$/, '')
     matchedContacts.push({
@@ -270,18 +272,18 @@ function normalizeJid(value) {
 }
 
 function api(path, options = {}) {
-  return fetch(path, {
-    ...options,
-    headers: options.headers || {}
-  }).then(async response => {
+  const request = signal => fetch(path, { ...options, signal: options.signal || signal, headers: options.headers || {} }).then(async response => {
     const data = await response.json().catch(() => ({}))
     if (!response.ok) {
-      const error = new Error(data.error || 'שגיאה')
+      const error = new Error(data.error || '?????')
       error.status = response.status
       throw error
     }
     return data
   })
+  if (options.method && options.method !== 'GET') return request()
+  const query = new URL(path, location.origin).searchParams
+  return requestPool.run(path, { bot: query.get('bot'), jid: query.get('jid'), path }, request)
 }
 
 async function refreshQr(bot) {
@@ -322,10 +324,9 @@ async function login() {
     const data = await response.json()
     if (!response.ok) throw new Error(data.error || 'שגיאה')
     authenticated.value = true
+    sessionReady = false
     await setBots(data.bots || [])
     connectSocket(handleSocketEvent)
-    await loadChats()
-    await loadContacts()
   } catch (err) {
     loginError.value = err.message
   }
@@ -335,10 +336,9 @@ async function restoreSession() {
   try {
     const data = await api('/api/session')
     authenticated.value = true
+    sessionReady = false
     await setBots(data.bots || [])
     connectSocket(handleSocketEvent)
-    await loadChats()
-    await loadContacts()
   } catch (err) {
     if ([401, 402, 403].includes(err.status)) {
       authenticated.value = false
@@ -351,16 +351,17 @@ async function restoreSession() {
 async function logout() {
   await fetch('/api/logout', { method: 'POST' }).catch(() => {})
   authenticated.value = false
+  requestPool.cancel()
   updateAppBadge(0)
   disconnectSocket()
 }
 
-async function refreshAfterReconnect() {
+async function refreshAfterReconnect(hasSession = false) {
   let ok = true
   try {
-    await refreshBots()
-    ok = await loadChats()
-    await loadContacts()
+    if (!hasSession) await refreshBots()
+    const results = await Promise.all([loadChats(), loadContacts()])
+    ok = results[0]
     autoMarkChatRead()
     updateAppBadge(unreadTotal.value)
   } catch (err) {
@@ -389,7 +390,8 @@ async function handleSocketEvent(data) {
       localStorage.setItem('wa-ui-selected-bot', selectedBot.value)
       await Promise.all(nextBots.map(refreshQr))
       // The server does not replay events missed while disconnected.
-      await refreshAfterReconnect()
+      await refreshAfterReconnect(true)
+      sessionReady = true
     }
     if (data.type === 'connection') {
       // status.id is the WhatsApp account JID; data.bot is the stable API ID.
@@ -429,13 +431,12 @@ async function handleSocketEvent(data) {
       }
     }
     if (data.type === 'refresh' && data.bot === selectedBot.value) {
-      await loadChats()
-      await loadContacts()
+      await Promise.all([loadChats(), loadContacts(true)])
     }
 }
 
 function upsertChat(chat) {
-  const existing = chats.value.find(item => item.jid === chat.jid)
+  const existing = chatsById.value.get(chat.jid)
   // Preserve typing status if not present in update
   if (existing && chat.typing === undefined) {
     chat.typing = existing.typing
@@ -449,13 +450,13 @@ function upsertChat(chat) {
   // The server may use WhatsApp names (pushName) when the contact name isn't
   // synced, but the client-side contacts list has the correct address-book name.
   if (!chat.isGroup) {
-    const contact = contacts.value.find(c => c.jid === chat.jid || c.phoneNumber === chat.jid)
+    const contact = contactsById.value.get(chat.jid)
     if (contact && contact.name !== chat.name) {
       chat.name = contact.name
     }
   }
-  const rest = chats.value.filter(item => item.jid !== chat.jid)
-  chats.value = [chat, ...rest]
+  if (existing) Object.assign(existing, chat)
+  else chats.value.push(chat)
 }
 
 function upsertMessage(message) {
@@ -551,12 +552,16 @@ async function loadChats(retried = false) {
     error.value = ''
     loadingChats.value = !chats.value.length
     const data = await api(`/api/chats?bot=${encodeURIComponent(bot)}`)
-    if (selectedBot.value !== bot || requestId !== chatLoadRequest) return true
-    chats.value = data.chats || []
+    if (!authenticated.value || selectedBot.value !== bot || requestId !== chatLoadRequest) return true
+    const existing = chatsById.value
+    chats.value = (data.chats || []).map(chat => {
+      const current = existing.get(chat.jid)
+      return current ? Object.assign(current, chat) : chat
+    })
     if (!selectedChat.value && filteredChats.value[0]) await selectChat(filteredChats.value[0].jid)
     return true
   } catch (err) {
-    if (selectedBot.value !== bot || requestId !== chatLoadRequest) return true
+    if (!authenticated.value || selectedBot.value !== bot || requestId !== chatLoadRequest) return true
     if (err.status === 404 && !retried) {
       const data = await api('/api/session')
       await setBots(data.bots || [])
@@ -570,14 +575,18 @@ async function loadChats(retried = false) {
   }
 }
 
-async function loadContacts() {
+async function loadContacts(force = false) {
   const bot = selectedBot.value
   if (!bot || !authenticated.value) return
+  if (!force && contactsLoadedBot === bot && Date.now() - contactsLoadedAt < 60000) return
   try {
     const data = await api(`/api/contacts?bot=${encodeURIComponent(bot)}`)
+    if (!authenticated.value || selectedBot.value !== bot) return
     contacts.value = data.contacts || []
+    contactsLoadedBot = bot
+    contactsLoadedAt = Date.now()
   } catch (err) {
-    // Contacts are optional; don't fail on error
+    // Contacts are optional; retain the address book on transient errors.
   }
 }
 
@@ -590,6 +599,7 @@ async function selectChat(jid, contactName) {
     return
   }
   const requestedBot = selectedBot.value
+  requestPool.cancel(scope => scope.path.startsWith('/api/messages?') && (scope.bot !== requestedBot || scope.jid !== jid))
   const requestId = ++messageLoadRequest
   const requestedJid = jid
   let shouldSyncFromPhone = false
@@ -1468,6 +1478,9 @@ function generateBadgeSvg(count) {
 watch(selectedChat, (jid) => { avatarLoaded.value = avatarCache[jid] === true })
 
 watch(selectedBot, async (val, oldVal) => {
+  requestPool.cancel(scope => Boolean(scope.bot) && scope.bot !== val)
+  contacts.value = []
+  contactsLoadedBot = ''
   if (val) localStorage.setItem('wa-ui-selected-bot', val)
   messageLoadRequest += 1
   selectedChat.value = ''
@@ -1478,6 +1491,7 @@ watch(selectedBot, async (val, oldVal) => {
   reactionMessageId.value = ''
   replyTo.value = null
   emojiPanelOpen.value = false
+  if (!sessionReady) return
   try {
     await loadChats()
     await loadContacts()
@@ -1528,6 +1542,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  requestPool.cancel()
   window.removeEventListener('paste', onPasteFile)
   window.removeEventListener('keydown', onKeydown)
   document.removeEventListener('visibilitychange', onVisibilityChange)

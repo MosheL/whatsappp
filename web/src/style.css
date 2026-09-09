@@ -693,6 +693,7 @@ button {
 }
 
 .message-row {
+  /* Keep loaded text searchable with Ctrl+F while skipping off-screen rendering. */
   contain: layout style;
   contain-intrinsic-size: auto 104px;
   content-visibility: auto;

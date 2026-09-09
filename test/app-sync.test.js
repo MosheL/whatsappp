@@ -19,6 +19,9 @@ function harnessFrom(src, names, globals) {
 }
 
 function harness(names, globals) {
+  if (globals.chats && !globals.chatsById) {
+    globals.chatsById = { get value() { return new Map(globals.chats.value.map(chat => [chat.jid, chat])) } }
+  }
   return harnessFrom(source, names, globals)
 }
 
@@ -89,7 +92,7 @@ test('status pushes preserve API client IDs and selection when the account ID ch
     assert.equal(context.bots.value[1].id, 'bot2')
     assert.equal(context.bots.value[1].accountId, id)
     assert.equal(context.bots.value[1].unreadSessionCount, 3)
-    await context.loadChats()
+    assert.equal(await context.loadChats(), true)
   }
   assert.deepEqual(requests, ['/api/chats?bot=bot2', '/api/chats?bot=bot2'])
   assert.deepEqual(stored, ['bot2', 'bot2'])
