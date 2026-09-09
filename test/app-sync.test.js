@@ -69,6 +69,32 @@ test('handleSocketEvent refreshes the session on init', async () => {
   assert.equal(refreshes, 1, 'only init triggers the resync')
 })
 
+test('status pushes preserve API client IDs and selection when the account ID changes', async () => {
+  const stored = []
+  const requests = []
+  const context = harness(['handleSocketEvent', 'setBots', 'loadChats'], {
+    authenticated: ref(true),
+    bots: ref([{ id: 'bot1', accountId: 'old-account' }, { id: 'bot2' }]),
+    selectedBot: ref('bot2'), localStorage: { setItem: (key, value) => stored.push(value) },
+    refreshQr: async () => {}, lastVisibilityResync: 0,
+    chatLoadRequest: 0, error: ref(''), loadingChats: ref(false),
+    chats: ref([]), selectedChat: ref('chat'), filteredChats: ref([]),
+    api: async url => { requests.push(url); return { chats: [] } }
+  })
+  for (const id of ['972500000002:1@s.whatsapp.net', '']) {
+    await context.handleSocketEvent({
+      type: 'connection', bot: 'bot2', status: { id, unreadSessionCount: 3 }
+    })
+    assert.equal(context.selectedBot.value, 'bot2')
+    assert.equal(context.bots.value[1].id, 'bot2')
+    assert.equal(context.bots.value[1].accountId, id)
+    assert.equal(context.bots.value[1].unreadSessionCount, 3)
+    await context.loadChats()
+  }
+  assert.deepEqual(requests, ['/api/chats?bot=bot2', '/api/chats?bot=bot2'])
+  assert.deepEqual(stored, ['bot2', 'bot2'])
+})
+
 test('background chat refresh keeps content visible and preserves it on network failure', async () => {
   let rejectRequest
   const chats = [{ jid: 'chat', unread: 3 }]

@@ -392,7 +392,11 @@ async function handleSocketEvent(data) {
       await refreshAfterReconnect()
     }
     if (data.type === 'connection') {
-      const next = bots.value.map(bot => bot.id === data.bot ? { ...bot, ...data.status } : bot)
+      // status.id is the WhatsApp account JID; data.bot is the stable API ID.
+      // Keep the same ID/accountId contract as the session and init payloads.
+      const next = bots.value.map(bot => bot.id === data.bot
+        ? { ...bot, ...data.status, id: bot.id, accountId: data.status.id }
+        : bot)
       await setBots(next)
       // Fresh bot status means the session data is current — the visibility
       // resync may start its throttle window from now.
