@@ -2,6 +2,7 @@
 import QRCode from 'qrcode'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useBlob } from './composables/useBlob.js'
+import { wsState, connectSocket, disconnectSocket, isOpen, isClosed } from './socket.js'
 import {
   formatTime, formatDateFull, formatDateCaption, formatLastSeen, initials, avatarUrl, setAvatarCache, getAvatarCache, AVATAR_VERSION
 } from './helpers.js'
@@ -66,14 +67,11 @@ const loadingChats = ref(false)
 const loadingMessages = ref(false)
 const loadingOlder = ref(false)
 const error = ref('')
-const wsState = ref('מנותק')
 const qrImages = ref({})
 const threadRef = ref(null)
-let reconnectTimer
-let botRefreshTimer
 let dragHideTimer
 let linkPreviewTimer
-let ws
+let lastVisibilityResync = 0
 let chatLoadRequest = 0
 let messageLoadRequest = 0
 let linkPreviewRequest = 0
@@ -303,11 +301,6 @@ async function setBots(nextBots) {
   await Promise.all(nextBots.map(refreshQr))
 }
 
-function scheduleBotRefresh() {
-  clearTimeout(botRefreshTimer)
-  botRefreshTimer = setTimeout(refreshBots, 300)
-}
-
 async function refreshBots() {
   if (!authenticated.value) return
   try {
@@ -330,7 +323,7 @@ async function login() {
     if (!response.ok) throw new Error(data.error || 'שגיאה')
     authenticated.value = true
     await setBots(data.bots || [])
-    connectWs()
+    connectSocket(handleSocketEvent)
     await loadChats()
     await loadContacts()
   } catch (err) {
@@ -343,7 +336,7 @@ async function restoreSession() {
     const data = await api('/api/session')
     authenticated.value = true
     await setBots(data.bots || [])
-    connectWs()
+    connectSocket(handleSocketEvent)
     await loadChats()
     await loadContacts()
   } catch (err) {
@@ -358,38 +351,35 @@ async function restoreSession() {
 async function logout() {
   await fetch('/api/logout', { method: 'POST' }).catch(() => {})
   authenticated.value = false
-  clearTimeout(reconnectTimer)
   updateAppBadge(0)
-  ws?.close()
+  disconnectSocket()
 }
 
 async function refreshAfterReconnect() {
+  let ok = true
   try {
     await refreshBots()
-    await loadChats()
+    ok = await loadChats()
     await loadContacts()
     autoMarkChatRead()
     updateAppBadge(unreadTotal.value)
   } catch (err) {
+    ok = false
     error.value = err.message
+  }
+  // After a crash the server may still be warming up: allow an immediate
+  // visibility resync and retry the chat load once shortly after.
+  if (!ok) {
+    lastVisibilityResync = 0
+    setTimeout(() => {
+      if (authenticated.value) loadChats()
+    }, 2500)
   }
 }
 
-function connectWs() {
-  ws?.close()
-  clearTimeout(reconnectTimer)
-  wsState.value = 'מתחבר'
-  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  ws = new WebSocket(`${protocol}//${location.host}/ws`)
-  const socket = ws
-  ws.onopen = () => {
-    if (ws !== socket) return
-    wsState.value = 'מחובר'
-  }
-  ws.onmessage = async event => {
-    if (ws !== socket || !authenticated.value) return
-    const data = JSON.parse(event.data)
-    if (data.type === 'init') {
+async function handleSocketEvent(data) {
+  if (!authenticated.value) return
+  if (data.type === 'init') {
       // Update bots list without switching the selected bot
       const nextBots = data.bots || []
       bots.value = nextBots
@@ -404,6 +394,9 @@ function connectWs() {
     if (data.type === 'connection') {
       const next = bots.value.map(bot => bot.id === data.bot ? { ...bot, ...data.status } : bot)
       await setBots(next)
+      // Fresh bot status means the session data is current — the visibility
+      // resync may start its throttle window from now.
+      lastVisibilityResync = Date.now()
     }
     if (data.type === 'account-purged' && data.bot === selectedBot.value) {
       chats.value = []
@@ -415,13 +408,11 @@ function connectWs() {
         upsertChat(data.chat)
       }
     }
-    if (data.type === 'chat') scheduleBotRefresh()
     if (data.type === 'chat-merge' && data.bot === selectedBot.value) {
       chats.value = chats.value.filter(chat => chat.jid !== data.fromJid)
       upsertChat(data.chat)
       if (selectedChat.value === data.fromJid) selectedChat.value = data.toJid
     }
-    if (data.type === 'chat-merge') scheduleBotRefresh()
     if (data.type === 'message-update' && data.bot === selectedBot.value && data.jid === selectedChat.value) {
       messages.value = messages.value.map(message => message.id === data.id ? mergeMessagePatch(message, data.patch) : message)
     }
@@ -433,22 +424,10 @@ function connectWs() {
         scrollToBottom(data.message)
       }
     }
-    if (data.type === 'message') scheduleBotRefresh()
     if (data.type === 'refresh' && data.bot === selectedBot.value) {
       await loadChats()
       await loadContacts()
     }
-    if (data.type === 'refresh') scheduleBotRefresh()
-  }
-  ws.onclose = () => {
-    if (ws !== socket) return
-    wsState.value = 'מנותק'
-    if (authenticated.value) reconnectTimer = setTimeout(connectWs, 2000)
-  }
-  ws.onerror = () => {
-    if (ws !== socket) return
-    wsState.value = 'שגיאה'
-  }
 }
 
 function upsertChat(chat) {
@@ -562,25 +541,26 @@ function messageSenderName(message) {
 
 async function loadChats(retried = false) {
   const bot = selectedBot.value
-  if (!bot || !authenticated.value) return
+  if (!bot || !authenticated.value) return true
   const requestId = ++chatLoadRequest
   try {
     error.value = ''
     loadingChats.value = !chats.value.length
     const data = await api(`/api/chats?bot=${encodeURIComponent(bot)}`)
-    if (selectedBot.value !== bot || requestId !== chatLoadRequest) return
+    if (selectedBot.value !== bot || requestId !== chatLoadRequest) return true
     chats.value = data.chats || []
     if (!selectedChat.value && filteredChats.value[0]) await selectChat(filteredChats.value[0].jid)
+    return true
   } catch (err) {
-    if (selectedBot.value !== bot || requestId !== chatLoadRequest) return
+    if (selectedBot.value !== bot || requestId !== chatLoadRequest) return true
     if (err.status === 404 && !retried) {
       const data = await api('/api/session')
       await setBots(data.bots || [])
-      await loadChats(true)
-      return
+      return await loadChats(true)
     }
     // Preserve the current list and thread on transient refresh failures.
     error.value = err.message
+    return false
   } finally {
     if (requestId === chatLoadRequest) loadingChats.value = false
   }
@@ -702,9 +682,6 @@ async function markAllRead() {
       body: JSON.stringify({ bot: selectedBot.value })
     })
     for (const chat of chats.value) chat.unread = 0
-    // Refresh bot status so the client-select badge (unreadSessionCount)
-    // reflects the cleared unread counts across all chats.
-    await refreshBots()
   } catch (err) {
     error.value = err.message
   }
@@ -794,8 +771,16 @@ function autoMarkChatRead(jid = selectedChat.value) {
 function onVisibilityChange() {
   if (document.visibilityState !== 'visible' || !authenticated.value) return
   updateAppBadge(unreadTotal.value)
-  if (!ws || ws.readyState === WebSocket.CLOSED) connectWs()
-  else if (ws.readyState === WebSocket.OPEN) refreshAfterReconnect()
+  if (isClosed()) {
+    connectSocket(handleSocketEvent)
+    return
+  }
+  if (!isOpen()) return
+  // Throttle the full resync to once per 20s — the socket already pushes
+  // bot status (unread counts), this covers events missed while frozen.
+  if (Date.now() - lastVisibilityResync < 20000) return
+  lastVisibilityResync = Date.now()
+  refreshAfterReconnect()
 }
 
 async function loadOlderMessages() {
@@ -1542,13 +1527,9 @@ onUnmounted(() => {
   window.removeEventListener('paste', onPasteFile)
   window.removeEventListener('keydown', onKeydown)
   document.removeEventListener('visibilitychange', onVisibilityChange)
-  clearTimeout(reconnectTimer)
-  clearTimeout(botRefreshTimer)
   clearTimeout(dragHideTimer)
   clearTimeout(linkPreviewTimer)
-  const socket = ws
-  ws = null
-  socket?.close()
+  disconnectSocket()
 })
 </script>
 

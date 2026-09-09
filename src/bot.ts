@@ -178,6 +178,7 @@ export class Bot {
   chatSettingsSyncKey: string
   currentWait: NodeJS.Timeout | undefined
   disconnectTime = 0
+  statusTimer: NodeJS.Timeout | undefined
   transcriptionCache: Map<string, string>
   linkPreviewCache: Map<string, { expiresAt: number, promise: Promise<WAUrlInfo | undefined> }>
   callPeers: Map<string, string>
@@ -235,7 +236,10 @@ export class Bot {
       contacts: this.contacts,
       lidToPhone: this.lidToPhone,
       chats: this.chats,
-      onChatEvent: (chat: UiChat) => this.events.emit('event', { type: 'chat', bot: authKey, chat }),
+      onChatEvent: (chat: UiChat) => {
+        this.events.emit('event', { type: 'chat', bot: authKey, chat })
+        this.emitStatusDebounced()
+      },
       onChatMerge: (fromJid: string, toJid: string, chat: UiChat) => {
         redis.multi().hdel(this.chatCacheKey, fromJid).zrem(this.chatIndexKey, fromJid).exec().catch(() => {})
         this.messageStore.mergeMessageStore(fromJid, toJid)
@@ -284,7 +288,10 @@ export class Bot {
       chats: this.chats,
       listChats: () => this.listChats(),
       sock: this.chatStoreSocket,
-      onChatEvent: (chat: UiChat) => this.events.emit('event', { type: 'chat', bot: authKey, chat })
+      onChatEvent: (chat: UiChat) => {
+        this.events.emit('event', { type: 'chat', bot: authKey, chat })
+        this.emitStatusDebounced()
+      }
     })
   }
 
@@ -1542,6 +1549,15 @@ export class Bot {
   }
 
   emitStatus() { this.events.emit('event', { type: 'connection', bot: this.authKey, status: this.status() }) }
+
+  /** Coalesce bursts of chat events into one status push (~500ms trailing). */
+  emitStatusDebounced() {
+    if (this.statusTimer) return
+    this.statusTimer = setTimeout(() => {
+      this.statusTimer = undefined
+      this.emitStatus()
+    }, 500)
+  }
 
   async syncExistingChatSettings() {
     if (!this.sock) return

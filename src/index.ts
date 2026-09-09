@@ -771,8 +771,29 @@ function wsSend(ws: any, data: unknown) {
 }
 
 wss.on('connection', ws => {
+  ws.isAlive = true
   wsSend(ws, { type: 'init', bots: botPayload() })
+  // App-level heartbeat: clients cannot send protocol pings from JS.
+  ws.on('message', raw => {
+    try {
+      if (JSON.parse(String(raw))?.type === 'ping') wsSend(ws, { type: 'pong' })
+    } catch { }
+  })
+  ws.on('pong', () => { ws.isAlive = true })
 })
+
+// Terminate clients that stopped answering protocol pings (client crash or
+// lost network) so events stop flowing to dead sockets.
+setInterval(() => {
+  for (const client of wss.clients) {
+    if (client.isAlive === false) {
+      client.terminate()
+      continue
+    }
+    client.isAlive = false
+    client.ping()
+  }
+}, 30000).unref()
 
 for (const [id, bot] of bots) {
   bot.events.on('event', event => {
