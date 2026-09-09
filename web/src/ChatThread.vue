@@ -96,7 +96,8 @@ const emit = defineEmits([
   'scroll-to-message', 'message-update', 'typing-expired', 'error',
   'mention-click',
   'reply-private',
-  'forward-message'
+  'forward-message',
+  'button-reply'
 ])
 
 watch(() => props.currentChat?.typing, (typing, oldTyping) => {
@@ -285,6 +286,15 @@ function copyInteractiveCode(code) {
   } else {
     copyTextFallback(text)
   }
+}
+
+// Tapped quick-reply buttons per message, so they render as used.
+const sentButtons = ref(new Set())
+
+function sendButtonReply(message, btn, index) {
+  if (!btn?.text || sentButtons.value.has(`${message.id}:${index}`)) return
+  sentButtons.value.add(`${message.id}:${index}`)
+  emit('button-reply', { jid: message.jid, text: btn.text, buttonId: btn.id || '', selectedIndex: index, messageId: message.id })
 }
 
 const MESSAGE_WINDOW_SIZE = 80
@@ -699,6 +709,15 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
                 class="interactive-button interactive-link"
                 :title="`העתק: ${btn.code}`"
                 @click.stop="copyInteractiveCode(btn.code)"
+              >
+                {{ btn.text }}
+              </button>
+              <button
+                v-else-if="btn.type === 'quick_reply'"
+                type="button"
+                class="interactive-button"
+                :class="{ 'interactive-button-sent': sentButtons.has(`${message.id}:${bi}`) }"
+                @click.stop="sendButtonReply(message, btn, bi)"
               >
                 {{ btn.text }}
               </button>

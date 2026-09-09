@@ -578,6 +578,17 @@ export function callOutcomeLabel(value: number | string | undefined | null): str
   return ''
 }
 
+// Preview fallback for interactive/template messages, matching the client's
+// interactiveTypeLabel: prefer body/title text, then a type-specific label.
+export function interactivePreviewLabel(data: { type?: string; body?: string; title?: string } | undefined | null): string {
+  if (!data) return ''
+  if (data.body || data.title) return data.body || data.title || ''
+  if (data.type === 'template') return 'תבנית'
+  if (data.type === 'buttons') return 'כפתורים'
+  if (data.type === 'list') return 'רשימה'
+  return 'הודעה אינטראקטיבית'
+}
+
 export function callTypeLabel(isVideo?: boolean): string {
   return isVideo ? 'שיחת וידאו' : 'שיחה קולית'
 }

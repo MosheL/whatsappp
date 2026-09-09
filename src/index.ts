@@ -585,6 +585,26 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     }
     return
   }
+  if (req.method === 'POST' && url.pathname === '/api/send-button-reply') {
+    const parsed = await readBotJson(req, res)
+    if (!parsed) return
+    try {
+      if (!parsed.data.jid || !parsed.data.text) {
+        sendJson(res, 400, { error: 'חסר נמען או טקסט' })
+        return
+      }
+      const message = await parsed.bot.sendTemplateButtonReply(
+        parsed.data.jid,
+        parsed.data.text,
+        parsed.data.buttonId || '',
+        Number.isFinite(parsed.data.selectedIndex) ? parsed.data.selectedIndex : -1
+      )
+      sendJson(res, 200, { ok: true, message })
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
 
   if (req.method === 'POST' && url.pathname === '/api/link-preview') {
     const parsed = await readBotJson(req, res)

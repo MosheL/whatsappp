@@ -2,6 +2,95 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { ChatStore } from '../src/chat-store.ts'
 
+function makeStore(chats: Map<string, any>, emitted: any[] = []) {
+  return new ChatStore({
+    redis: { multi: () => ({ hset() { return this }, zadd() { return this }, zremrangebyrank() { return this }, exec: async () => [] }) },
+    label: 'test',
+    chatCacheKey: 'chats',
+    chatIndexKey: 'chat-index',
+    messagePayloadKey: () => '',
+    chatSettingsSyncKey: 'chat-settings-sync',
+    CHAT_LIMIT: 500,
+    CHAT_SETTINGS_RESYNC_INTERVAL_MS: 1000,
+    canonicalJid: value => value,
+    isOwnReceipt: () => false,
+    chats,
+    listChats: () => [...chats.values()],
+    sock: { current: null },
+    onChatEvent: chat => emitted.push({ ...chat })
+  })
+}
+
+test('template messages mark the chat preview with a template label', () => {
+  const makeChat = (jid: string) => [jid, {
+    jid,
+    displayJid: jid,
+    phoneNumber: '',
+    name: 'Driver',
+    lastMessage: 'old',
+    lastMessageFromMe: false,
+    timestamp: 100,
+    unread: 0,
+    avatarUrl: '',
+    isGroup: false
+  }] as const
+
+  // A template message with body text previews the body.
+  const jidA = '972501234567@s.whatsapp.net'
+  const chatsA = new Map([makeChat(jidA)])
+  makeStore(chatsA).updateChatFromEditedMessage(jidA, {
+    id: 'tpl1',
+    jid: jidA,
+    key: { id: 'tpl1', remoteJid: jidA },
+    fromMe: false,
+    sender: 'them',
+    text: '',
+    type: 'templateMessage',
+    timestamp: 200,
+    interactiveData: { type: 'template', body: 'ההזמנה שלך אושרה', buttons: [] }
+  })
+  const chatA = chatsA.get(jidA)
+  assert.equal(chatA?.lastMessage, 'ההזמנה שלך אושרה')
+  assert.equal(chatA?.lastMessageFromMe, false)
+  assert.equal(chatA?.lastMessageId, 'tpl1', 'template message becomes the tracked last message')
+
+  // A template message without body/title falls back to the template label.
+  const jidB = '972501234568@s.whatsapp.net'
+  const chatsB = new Map([makeChat(jidB)])
+  makeStore(chatsB).updateChatFromEditedMessage(jidB, {
+    id: 'tpl2',
+    jid: jidB,
+    key: { id: 'tpl2', remoteJid: jidB },
+    fromMe: true,
+    sender: 'me',
+    text: '',
+    type: 'templateMessage',
+    timestamp: 200,
+    interactiveData: { type: 'template', buttons: [] }
+  })
+  const chatB = chatsB.get(jidB)
+  assert.equal(chatB?.lastMessage, 'תבנית')
+  assert.equal(chatB?.lastMessageId, 'tpl2')
+
+  // A receipt for that template message updates the preview status.
+  const receipt: any = { userJid: 'them', readTimestamp: 9 }
+  makeStore(chatsB).updateChatFromEditedMessage(jidB, {
+    id: 'tpl2',
+    jid: jidB,
+    key: { id: 'tpl2', remoteJid: jidB },
+    fromMe: true,
+    sender: 'me',
+    text: '',
+    type: 'templateMessage',
+    timestamp: 200,
+    status: 4,
+    receipt,
+    userReceipt: [receipt],
+    interactiveData: { type: 'template', buttons: [] }
+  })
+  assert.equal(chatB?.lastMessageStatus, 4, 'receipt marks the template message read')
+})
+
 test('persists and emits archive changes received from WhatsApp', () => {
   const jid = '972501234567@s.whatsapp.net'
   const chats = new Map()

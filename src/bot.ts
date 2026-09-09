@@ -38,6 +38,7 @@ import {
   isViewOnceBaileysMessage,
   viewOnceKindFromType,
   viewOnceLabel,
+  interactivePreviewLabel,
   messageText,
   messageType,
   messageMedia,
@@ -909,6 +910,32 @@ export class Bot {
     return publicLinkPreview(await this.resolveLinkPreview(text))
   }
 
+  /** Reply to a template quick-reply button, the way WhatsApp Web does. */
+  async sendTemplateButtonReply(jid: string, text: string, buttonId = '', selectedIndex = -1) {
+    if (!this.sock) throw new Error('Socket not connected')
+    jid = this.contactCache.resolveOutgoingJid(jid)
+    const now = Date.now()
+    const sent = await this.sock.sendMessage(jid, {
+      templateButtonReplyMessage: {
+        selectedId: buttonId || text,
+        selectedDisplayText: text,
+        ...(selectedIndex >= 0 ? { selectedIndex } : {})
+      }
+    })
+    const message = this.recordUiMessage({
+      id: sent?.key?.id || `${now}`,
+      jid,
+      key: sent?.key || { remoteJid: jid, id: `${now}`, fromMe: true } as WAMessageKey,
+      fromMe: true,
+      sender: 'אני',
+      text,
+      type: 'templateButtonReplyMessage',
+      status: 'sent',
+      timestamp: now
+    })
+    return message
+  }
+
   async resolveLinkPreview(text: string): Promise<WAUrlInfo | undefined> {
     const trimmedText = text.trim()
     if (!trimmedText) return undefined
@@ -1174,7 +1201,7 @@ export class Bot {
       console.log('📥 recordUiMessage callback:', 'found currentMessage:', Boolean(currentMessage), 'messageData.status:', messageData.status, 'chat.lastMessageStatus before:', chat.lastMessageStatus)
       if (displayable && isLatestKnown) {
         chat.lastMessageId = messageData.id
-        chat.lastMessage = messageData.text || (messageData.viewOnce ? viewOnceLabel(messageData.viewOnceType) : messageData.contact ? (messageData.contact.contacts?.length ? 'אנשי קשר' : 'איש קשר') : messageData.media?.kind === 'image' ? 'תמונה' : messageData.media?.kind === 'video' ? 'וידאו' : messageData.media?.kind === 'document' ? 'קובץ' : messageData.interactiveData ? (messageData.interactiveData.body || messageData.interactiveData.title || 'הודעה אינטראקטיבית') : messageData.location ? (messageData.location.name || 'מיקום') : isSupportedMessageType(messageData.type) ? messageData.type : 'הודעה לא נתמכת')
+        chat.lastMessage = messageData.text || (messageData.viewOnce ? viewOnceLabel(messageData.viewOnceType) : messageData.contact ? (messageData.contact.contacts?.length ? 'אנשי קשר' : 'איש קשר') : messageData.media?.kind === 'image' ? 'תמונה' : messageData.media?.kind === 'video' ? 'וידאו' : messageData.media?.kind === 'document' ? 'קובץ' : messageData.interactiveData ? interactivePreviewLabel(messageData.interactiveData) : messageData.location ? (messageData.location.name || 'מיקום') : isSupportedMessageType(messageData.type) ? messageData.type : 'הודעה לא נתמכת')
         chat.lastMessageFromMe = messageData.fromMe
         // Only overwrite status/receipt if the incoming data has meaningful values.
         // Incoming messages often have undefined status, which would erase the

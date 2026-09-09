@@ -920,6 +920,26 @@ async function sendText() {
   }
 }
 
+async function sendButtonReply(payload) {
+  const { jid, text, buttonId, selectedIndex, messageId } = payload
+  const bot = selectedBot.value
+  if (!bot || !jid || !text) return
+  error.value = ''
+  try {
+    const data = await api('/api/send-button-reply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bot, jid, text, buttonId, selectedIndex })
+    })
+    if (data.message) {
+      upsertMessage(data.message)
+      scrollToBottom(data.message)
+    }
+  } catch (err) {
+    error.value = err.message
+  }
+}
+
 async function loadComposerLinkPreview(value) {
   const requestId = ++linkPreviewRequest
   composerLinkPreview.value = null
@@ -1647,6 +1667,7 @@ onUnmounted(() => {
         @typing-expired="clearExpiredTyping"
         @message-update="updateMessage"
         @select-chat="selectChat"
+        @button-reply="sendButtonReply"
         @error="error = $event"
       />
 

@@ -1203,6 +1203,20 @@ button {
   background: #dce6e0;
 }
 
+.interactive-button:not(:disabled) {
+  cursor: pointer;
+  opacity: 1;
+}
+
+.interactive-button:not(:disabled):hover {
+  background: #dce6e0;
+}
+
+.interactive-button-sent {
+  background: #dce6e0;
+  color: #5a6b64;
+}
+
 /* Unsupported message placeholder (message types the UI can't render) */
 .unsupported-message {
   display: flex;
