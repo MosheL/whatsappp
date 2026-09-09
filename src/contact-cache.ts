@@ -310,15 +310,20 @@ export class ContactCache {
     const toChat = chats.get(toJid)
 
     if (fromChat) {
+      const preview = (toChat?.timestamp || 0) >= (fromChat.timestamp || 0) && toChat?.lastMessage
+        ? toChat : fromChat
       const merged: UiChat = this.enrichChat({
         ...(fromChat || toChat),
         ...(toChat || {}),
         jid: toJid,
         timestamp: Math.max(fromChat.timestamp || 0, toChat?.timestamp || 0),
         unread: Math.max(fromChat.unread || 0, toChat?.unread || 0),
-        lastMessage: (toChat?.timestamp || 0) >= (fromChat.timestamp || 0)
-          ? (toChat?.lastMessage || fromChat.lastMessage)
-          : fromChat.lastMessage
+        lastMessage: preview.lastMessage,
+        lastMessageId: preview.lastMessageId,
+        lastMessageFromMe: preview.lastMessageFromMe,
+        lastMessageStatus: preview.lastMessageStatus,
+        lastMessageReceipt: preview.lastMessageReceipt,
+        lastMessageUserReceipt: preview.lastMessageUserReceipt
       } as UiChat)
       chats.delete(fromJid)
       chats.set(toJid, merged)

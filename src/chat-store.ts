@@ -100,17 +100,23 @@ export class ChatStore {
     const { chats, onChatEvent } = this.deps
     const chat = chats.get(jid)
     if (!chat || !message) return
+    const label = message.deleted
+      ? 'הודעה נמחקה'
+      : message.text || (message.viewOnce ? '' : message.contact ? (message.contact.contacts?.length ? 'אנשי קשר' : 'איש קשר') : message.media?.kind === 'image' ? 'תמונה' : message.media?.kind === 'video' ? 'וידאו' : message.media?.kind === 'document' ? 'קובץ' : message.interactiveData ? (message.interactiveData.body || message.interactiveData.title || 'הודעה אינטראקטיבית') : message.location ? (message.location.name || 'מיקום') : message.type)
+    const displayable = Boolean(message.text || message.media || message.contact || message.interactiveData || message.call || message.linkPreview || message.location)
+    // Text and media labels are not unique. Only the preview's message ID
+    // identifies a receipt or edit for the current last message reliably.
+    const isCurrentLast = Boolean(chat.lastMessageId && chat.lastMessageId === message.id)
+    if (chat.lastMessageId && !isCurrentLast) return
     // Allow 10s tolerance for timing differences. chat.timestamp may reflect a
     // non-displayable incoming message (e.g. presence, system) that is slightly
     // newer than the last displayable message. Without this tolerance, receipt
     // updates for the last displayable message are silently dropped.
     const msgTs = message.timestamp || 0
     const chatTs = chat.timestamp || 0
-    if (msgTs < chatTs - 10000) return
-    const displayable = Boolean(message.text || message.media || message.contact || message.interactiveData || message.call || message.linkPreview || message.location)
-    chat.lastMessage = message.deleted
-      ? 'הודעה נמחקה'
-      : message.text || (message.viewOnce ? '' : message.contact ? (message.contact.contacts?.length ? 'אנשי קשר' : 'איש קשר') : message.media?.kind === 'image' ? 'תמונה' : message.media?.kind === 'video' ? 'וידאו' : message.media?.kind === 'document' ? 'קובץ' : message.interactiveData ? (message.interactiveData.body || message.interactiveData.title || 'הודעה אינטראקטיבית') : message.location ? (message.location.name || 'מיקום') : message.type)
+    if (!isCurrentLast && msgTs < chatTs - 10000) return
+    chat.lastMessageId = message.id
+    chat.lastMessage = label
     chat.lastMessageFromMe = message.fromMe
     chat.lastMessageStatus = message.status
     chat.lastMessageReceipt = message.receipt
@@ -121,7 +127,7 @@ export class ChatStore {
     // that would cause receipt updates for the last displayable message to
     // fail the timestamp check in subsequent calls.
     if (displayable) {
-      chat.timestamp = message.timestamp || chat.timestamp
+      chat.timestamp = Math.max(message.timestamp || 0, chat.timestamp || 0)
     }
     this.persistChat(chat)
     onChatEvent(chat)

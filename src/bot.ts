@@ -298,7 +298,9 @@ export class Bot {
       connection: this.connection,
       qr: this.qr,
       chatCount: chats.length,
-      unreadSessionCount: chats.filter(chat => Number(chat.unread || 0) > 0).length
+      // Only count unread chats that are NOT archived, so the select-box
+      // badge reflects actionable (inbox) unread rather than hidden chats.
+      unreadSessionCount: chats.filter(chat => Number(chat.unread || 0) > 0 && !chat.isArchived).length
     }
   }
 
@@ -1171,6 +1173,7 @@ export class Bot {
       const messageData = currentMessage || storedMessage
       console.log('📥 recordUiMessage callback:', 'found currentMessage:', Boolean(currentMessage), 'messageData.status:', messageData.status, 'chat.lastMessageStatus before:', chat.lastMessageStatus)
       if (displayable && isLatestKnown) {
+        chat.lastMessageId = messageData.id
         chat.lastMessage = messageData.text || (messageData.viewOnce ? viewOnceLabel(messageData.viewOnceType) : messageData.contact ? (messageData.contact.contacts?.length ? 'אנשי קשר' : 'איש קשר') : messageData.media?.kind === 'image' ? 'תמונה' : messageData.media?.kind === 'video' ? 'וידאו' : messageData.media?.kind === 'document' ? 'קובץ' : messageData.interactiveData ? (messageData.interactiveData.body || messageData.interactiveData.title || 'הודעה אינטראקטיבית') : messageData.location ? (messageData.location.name || 'מיקום') : isSupportedMessageType(messageData.type) ? messageData.type : 'הודעה לא נתמכת')
         chat.lastMessageFromMe = messageData.fromMe
         // Only overwrite status/receipt if the incoming data has meaningful values.

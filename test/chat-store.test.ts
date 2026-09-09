@@ -158,3 +158,77 @@ test('interactive (cta_url) messages without text pop the chat to the top of the
   assert.equal(chat?.timestamp, 200, 'chat timestamp advances so the chat pops to the top')
   assert.equal(chat?.lastMessage, 'הודעה אינטראקטיבית', 'preview falls back to an interactive label, not the raw type')
 })
+
+test('a read receipt updates the last-message preview even when the chat timestamp is newer', () => {
+  const jid = '972501234567@s.whatsapp.net'
+  const chats = new Map([[jid, {
+    jid,
+    displayJid: jid,
+    phoneNumber: '',
+    name: 'Driver',
+    lastMessage: 'hello',
+    lastMessageFromMe: true,
+    lastMessageId: 'message',
+    timestamp: 90000,
+    unread: 0,
+    avatarUrl: '',
+    isGroup: false
+  }]])
+  const emitted: any[] = []
+  const store = new ChatStore({
+    redis: { multi: () => ({ hset() { return this }, zadd() { return this }, zremrangebyrank() { return this }, exec: async () => [] }) },
+    label: 'test',
+    chatCacheKey: 'chats',
+    chatIndexKey: 'chat-index',
+    messagePayloadKey: () => '',
+    chatSettingsSyncKey: 'chat-settings-sync',
+    CHAT_LIMIT: 500,
+    CHAT_SETTINGS_RESYNC_INTERVAL_MS: 1000,
+    canonicalJid: value => value,
+    isOwnReceipt: () => false,
+    chats,
+    listChats: () => [...chats.values()],
+    sock: { current: null },
+    onChatEvent: chat => emitted.push({ ...chat })
+  })
+
+  const receipt: any = { userJid: 'them', readTimestamp: 9 }
+  // Message is the same last message but older than chat.timestamp by more than
+  // the 10s tolerance (chat timestamp was pushed by a non-displayable system
+  // message). The receipt/status must still be applied to the preview.
+  store.updateChatFromEditedMessage(jid, {
+    id: 'message',
+    jid,
+    key: { id: 'message', remoteJid: jid },
+    fromMe: true,
+    sender: 'me',
+    text: 'hello',
+    type: 'conversation',
+    timestamp: 70000,
+    status: 3,
+    receipt,
+    userReceipt: [receipt]
+  })
+
+  const chat = chats.get(jid)
+  assert.equal(chat?.lastMessageStatus, 3)
+  assert.deepEqual(chat?.lastMessageReceipt, receipt)
+  assert.equal(chat?.lastMessage, 'hello', 'preview text stays the same')
+  assert.equal(emitted.length, 1, 'a chat event is emitted so the UI refreshes')
+  assert.equal(chat?.timestamp, 90000, 'receipts must not move the chat backwards')
+
+  store.updateChatFromEditedMessage(jid, {
+    id: 'older-message', jid, key: { id: 'older-message', remoteJid: jid },
+    fromMe: true, sender: 'me', text: 'hello', type: 'conversation',
+    timestamp: 89000, status: 2
+  })
+  assert.equal(chat?.lastMessageStatus, 3, 'identical text on a different message must not overwrite the preview receipt')
+  assert.equal(emitted.length, 1)
+
+  store.updateChatFromEditedMessage(jid, {
+    id: 'message', jid, key: { id: 'message', remoteJid: jid },
+    fromMe: true, sender: 'me', text: 'edited hello', type: 'conversation',
+    timestamp: 70000, status: 3
+  })
+  assert.equal(chat?.lastMessage, 'edited hello', 'edits to the identified preview bypass timestamp tolerance')
+})

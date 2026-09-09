@@ -119,7 +119,11 @@ const chatSubtitle = computed(() => ""/* currentChat.value ? chatAddress(current
 const selectedFileName = computed(() => selectedFile.value?.name || '')
 const selectedFileIsImage = computed(() => Boolean(selectedFile.value?.type?.startsWith('image/') && selectedFilePreviewUrl.value))
 const emojis = computed(() => [...new Set([...usedEmojis.value, ...defaultEmojis])].slice(0, 48))
-const unreadTotal = computed(() => chats.value.filter(chat => Number(chat.unread || 0) > 0).length)
+// Total unread messages across all chats (used by the taskbar badge).
+// Sum the per-chat unread counts rather than counting chats, so the badge
+// reflects the real number of unread messages instead of topping out at the
+// number of chats that happen to have unread.
+const unreadTotal = computed(() => chats.value.reduce((sum, chat) => sum + Math.max(0, Number(chat.unread || 0)), 0))
 const archivedCount = computed(() => chats.value.filter(chat => chat.isArchived).length)
 const archivedUnreadCount = computed(() => chats.value.filter(chat => chat.isArchived && Number(chat.unread || 0) > 0).length)
 const inboxUnreadCount = computed(() => chats.value.filter(chat => !chat.isArchived && Number(chat.unread || 0) > 0).length)
@@ -354,7 +358,21 @@ async function restoreSession() {
 async function logout() {
   await fetch('/api/logout', { method: 'POST' }).catch(() => {})
   authenticated.value = false
+  clearTimeout(reconnectTimer)
+  updateAppBadge(0)
   ws?.close()
+}
+
+async function refreshAfterReconnect() {
+  try {
+    await refreshBots()
+    await loadChats()
+    await loadContacts()
+    autoMarkChatRead()
+    updateAppBadge(unreadTotal.value)
+  } catch (err) {
+    error.value = err.message
+  }
 }
 
 function connectWs() {
@@ -363,10 +381,13 @@ function connectWs() {
   wsState.value = 'מתחבר'
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
   ws = new WebSocket(`${protocol}//${location.host}/ws`)
+  const socket = ws
   ws.onopen = () => {
+    if (ws !== socket) return
     wsState.value = 'מחובר'
   }
   ws.onmessage = async event => {
+    if (ws !== socket || !authenticated.value) return
     const data = JSON.parse(event.data)
     if (data.type === 'init') {
       // Update bots list without switching the selected bot
@@ -377,8 +398,8 @@ function connectWs() {
       }
       localStorage.setItem('wa-ui-selected-bot', selectedBot.value)
       await Promise.all(nextBots.map(refreshQr))
-      if (!chats.value.length) await loadChats()
-      await loadContacts()
+      // The server does not replay events missed while disconnected.
+      await refreshAfterReconnect()
     }
     if (data.type === 'connection') {
       const next = bots.value.map(bot => bot.id === data.bot ? { ...bot, ...data.status } : bot)
@@ -420,10 +441,12 @@ function connectWs() {
     if (data.type === 'refresh') scheduleBotRefresh()
   }
   ws.onclose = () => {
+    if (ws !== socket) return
     wsState.value = 'מנותק'
     if (authenticated.value) reconnectTimer = setTimeout(connectWs, 2000)
   }
   ws.onerror = () => {
+    if (ws !== socket) return
     wsState.value = 'שגיאה'
   }
 }
@@ -543,7 +566,7 @@ async function loadChats(retried = false) {
   const requestId = ++chatLoadRequest
   try {
     error.value = ''
-    loadingChats.value = true
+    loadingChats.value = !chats.value.length
     const data = await api(`/api/chats?bot=${encodeURIComponent(bot)}`)
     if (selectedBot.value !== bot || requestId !== chatLoadRequest) return
     chats.value = data.chats || []
@@ -556,9 +579,7 @@ async function loadChats(retried = false) {
       await loadChats(true)
       return
     }
-    chats.value = []
-    selectedChat.value = ''
-    messages.value = []
+    // Preserve the current list and thread on transient refresh failures.
     error.value = err.message
   } finally {
     if (requestId === chatLoadRequest) loadingChats.value = false
@@ -681,6 +702,9 @@ async function markAllRead() {
       body: JSON.stringify({ bot: selectedBot.value })
     })
     for (const chat of chats.value) chat.unread = 0
+    // Refresh bot status so the client-select badge (unreadSessionCount)
+    // reflects the cleared unread counts across all chats.
+    await refreshBots()
   } catch (err) {
     error.value = err.message
   }
@@ -768,7 +792,10 @@ function autoMarkChatRead(jid = selectedChat.value) {
 }
 
 function onVisibilityChange() {
-  if (document.visibilityState === 'visible') autoMarkChatRead()
+  if (document.visibilityState !== 'visible' || !authenticated.value) return
+  updateAppBadge(unreadTotal.value)
+  if (!ws || ws.readyState === WebSocket.CLOSED) connectWs()
+  else if (ws.readyState === WebSocket.OPEN) refreshAfterReconnect()
 }
 
 async function loadOlderMessages() {
@@ -1391,10 +1418,15 @@ function scrollToMessage(id) {
 
 function updateAppBadge(count) {
   document.title = count ? `(${count}) WhatsApp` : 'WhatsApp'
-  if (!('setAppBadge' in navigator) || !('clearAppBadge' in navigator)) return
-  if (count > 0) navigator.setAppBadge(count).catch(() => {})
-  else navigator.clearAppBadge().catch(() => {})
   updateFaviconBadge(count)
+  try {
+    const result = count > 0
+      ? navigator.setAppBadge?.(count)
+      : navigator.clearAppBadge ? navigator.clearAppBadge() : navigator.setAppBadge?.(0)
+    result?.catch(err => console.warn('Unable to update app badge:', err))
+  } catch (err) {
+    console.warn('Unable to update app badge:', err)
+  }
 }
 
 /** Generate a favicon SVG data URL with a red badge overlay showing the unread count.
@@ -1494,8 +1526,9 @@ onUnmounted(() => {
   clearTimeout(botRefreshTimer)
   clearTimeout(dragHideTimer)
   clearTimeout(linkPreviewTimer)
-  updateAppBadge(0)
-  ws?.close()
+  const socket = ws
+  ws = null
+  socket?.close()
 })
 </script>
 

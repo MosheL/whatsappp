@@ -146,6 +146,7 @@ export type UiChat = {
   phoneNumber: string
   name: string
   lastMessage: string
+  lastMessageId?: string
   timestamp: number
   unread: number
   isGroup: boolean
