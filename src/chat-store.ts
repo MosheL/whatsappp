@@ -2,7 +2,7 @@ import type { UiChat, UiMessage, MessagePatch, ChatStoreDeps } from './types.ts'
 import type { proto } from '@whiskeysockets/baileys'
 import { isJidGroup } from '@whiskeysockets/baileys'
 import type { Chat } from '@whiskeysockets/baileys/lib/Types/Chat.js'
-import { shouldIgnoreUiJid } from './contact-cache.ts'
+import { shouldIgnoreUiJid, looksLikeJid } from './contact-cache.ts'
 import { callTypeLabel, interactivePreviewLabel } from './message-processor.ts'
 import { messageStatusRank, mergeMessagePatch, reactionUserKey } from './message-utils.ts'
 
@@ -198,10 +198,10 @@ export class ChatStore {
       const contactDisplayName = this.deps.resolveContactName?.(jid) || ''
       if (contactDisplayName) {
         chat.name = contactDisplayName
-      } else if (chatData.name && !chatData.name.includes('@')) {
+      } else if (chatData.name && !looksLikeJid(chatData.name)) {
         chat.name = chatData.name
       }
-    } else if (chatData.name && !chatData.name.includes('@')) {
+    } else if (chatData.name && !looksLikeJid(chatData.name)) {
       chat.name = chatData.name
     }
     if (chatData.ephemeralSettings?.ephemeralExpType === 'permanent') chat.isMuted = true

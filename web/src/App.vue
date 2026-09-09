@@ -402,9 +402,12 @@ async function handleSocketEvent(data) {
         ? { ...bot, ...data.status, id: bot.id, accountId: data.status.id }
         : bot)
       await setBots(next)
-      // Fresh bot status means the session data is current — the visibility
-      // resync may start its throttle window from now.
-      lastVisibilityResync = Date.now()
+      // NOTE: we deliberately do NOT touch lastVisibilityResync here. A bot-status
+      // push only carries lightweight counts and does not refresh chat data, and it
+      // can arrive for any bot. Resetting the throttle window on every status event
+      // would suppress the visibility resync (the only path that actually reloads
+      // chats) indefinitely. The throttle is tracked at the actual resync points
+      // (onVisibilityChange / refreshAfterReconnect) instead.
     }
     if (data.type === 'account-purged' && data.bot === selectedBot.value) {
       chats.value = []

@@ -25,6 +25,38 @@ function harness(names, globals) {
   return harnessFrom(source, names, globals)
 }
 
+test('bot-status events neither resync nor reset the visibility throttle; only visibility changes do', async () => {
+  let resyncs = 0
+  const doc = { visibilityState: 'visible' }
+  const context = harness(['handleSocketEvent', 'onVisibilityChange'], {
+    authenticated: ref(true),
+    bots: ref([{ id: 'bot1' }, { id: 'bot2' }]),
+    selectedBot: ref('bot1'),
+    localStorage: { setItem() {} },
+    refreshQr: async () => {},
+    setBots: async () => {},
+    updateAppBadge: () => {},
+    unreadTotal: ref(0),
+    connectSocket: () => {},
+    isClosed: () => false,
+    isOpen: () => true,
+    document: doc,
+    lastVisibilityResync: 0,
+    refreshAfterReconnect: async () => { resyncs++ }
+  })
+
+  // A status/connection push (for a background bot) must NOT trigger a resync.
+  for (let i = 0; i < 3; i++) {
+    await context.handleSocketEvent({ type: 'connection', bot: 'bot2', status: { id: 'x', unreadSessionCount: i } })
+  }
+  assert.equal(resyncs, 0, 'connection/status events must not resync chats')
+
+  // The actual visibility resync still works (it is not suppressed by the pings above).
+  doc.visibilityState = 'visible'
+  await context.onVisibilityChange()
+  assert.ok(resyncs >= 1, 'visibility change must run an actual resync')
+})
+
 test('every websocket init reconciles unread state, including a quick reconnect', async () => {
   const sockets = []
   const events = []

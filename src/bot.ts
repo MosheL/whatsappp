@@ -1723,6 +1723,12 @@ export class Bot {
           if (!chat.isGroup) {
             console.log(`${this.label}: subscribing to presence for (open)`, chat.jid)
             sock.presenceSubscribe(chat.jid).catch(err => console.error(`${this.label}: subscribe error`, err.message))
+          } else {
+            // Refresh group subjects/participants now that the socket is connected.
+            // Group metadata requires a connected socket and cannot be fetched during
+            // init() (before startSock), which is why this lives in the open handler.
+            this.contactCache.rememberGroupParticipants(chat.jid).catch(err =>
+              console.error(`${this.label}: group refresh error`, err?.message))
           }
         }
 
@@ -1875,7 +1881,9 @@ export class Bot {
       const canonical = this.contactCache.canonicalJid(jid)
       if (!isJidGroup(canonical)) return
       const chat = this.chats.get(canonical)
-      if (chat && subject && !String(subject).includes('@') && chat.name !== String(subject)) {
+      if (chat && subject) {
+        // upsertGroupMetadata applies the authoritative subject (it only rejects
+        // strings that are actually JIDs, not subjects containing '@').
         this.contactCache.upsertGroupMetadata(canonical, { subject })
       } else if (chat) {
         this.contactCache.upsertGroupMetadata(canonical, {})
@@ -2038,14 +2046,13 @@ export class Bot {
 
   async init() {
     await this.contactCache.restoreUiCache()
-    // Self-heal cached names: re-link every restored chat to its authoritative
-    // contact (personal) / group subject (groups) so wrong names that were synced
-    // into Redis earlier get corrected as soon as the bot (re)connects — simply
-    // reloading the client does not re-sync them from WhatsApp.
+    // Self-heal personal chat names from the contact cache (contacts are restored
+    // before chats). Group subjects are refreshed in the connection 'open' handler
+    // because fetching group metadata requires the socket to be connected.
     for (const [, chat] of this.chats) {
+      if (chat.isGroup) continue
       this.contactCache.enrichChat(chat, '')
       this.persistChat(chat)
-      if (chat.isGroup) this.contactCache.rememberGroupParticipants(chat.jid).catch(() => {})
     }
     // Recalculate unread counts from actual messages on restore.
     // Old chats persisted in Redis may have stale chat.unread values

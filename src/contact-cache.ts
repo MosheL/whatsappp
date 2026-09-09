@@ -44,6 +44,17 @@ export function displayPhone(phoneNumber: string): string {
   return phoneNumber.replace(/@s\.whatsapp\.net$/, '').replace(/[^\d]/g, '')
 }
 
+/**
+ * True when a string looks like an actual WhatsApp JID rather than a human name.
+ * Used to reject stored JIDs ("12345@s.whatsapp.net") from being shown as names
+ * WITHOUT rejecting legitimate display names that merely contain '@' (e.g. a
+ * group subject such as "Work @ Home").
+ */
+export function looksLikeJid(value?: string | null): boolean {
+  if (!value) return false
+  return /@(s\.whatsapp\.net|g\.us|lid|newsletter|broadcast|status)$/i.test(String(value))
+}
+
 export function contactName(contact?: Partial<Contact>): string {
   return contact?.name || whatsappName(contact)
 }
@@ -73,18 +84,20 @@ export class ContactCache {
     if (contact.phoneNumber) contact.phoneNumber = normalizePhoneJid(contact.phoneNumber)
     if (isLidJid(contact.id) && contact.phoneNumber && !contact.lid) contact.lid = contact.id
     const ids = [contact.id, contact.phoneNumber, contact.lid].filter(Boolean) as string[]
-    if (!contactName(contact)) {
-      const namedExisting = ids
-        .map(id => contacts.get(id))
-        .find(existing => contactName(existing))
-      if (namedExisting) {
-        contact = {
-          ...namedExisting,
-          ...contact,
-          name: namedExisting.name,
-          verifiedName: namedExisting.verifiedName,
-          notify: namedExisting.notify
-        }
+    // Preserve the authoritative address-book `name` across updates. A freshly
+    // synced WhatsApp contact often arrives carrying only `notify`/`verifiedName`
+    // (the user's profile/username) with NO address-book `name`. If we naively
+    // overwrite the stored contact here we would WIPE `name` from contacts that
+    // already had one — which is exactly why OLD contacts lose their names while
+    // brand-new ones keep them. Always keep the best-known value per field.
+    const existingContact = ids.map(id => contacts.get(id)).find(Boolean)
+    if (existingContact) {
+      contact = {
+        ...existingContact,
+        ...contact,
+        name: contact.name || existingContact.name || '',
+        verifiedName: contact.verifiedName || existingContact.verifiedName,
+        notify: contact.notify || existingContact.notify
       }
     }
     for (const id of ids) contacts.set(id, contact)
@@ -289,8 +302,8 @@ export class ContactCache {
     const { contacts, lidToPhone } = this.deps
     const contact = this.contactForJid(chat.jid)
     const phoneNumber = this.phoneForJid(chat.jid, contact)
-    const existingName = chat.name && !chat.name.includes('@') ? chat.name : ''
-    const cleanFallback = fallbackName && !fallbackName.includes('@') ? fallbackName : ''
+    const existingName = chat.name && !looksLikeJid(chat.name) ? chat.name : ''
+    const cleanFallback = fallbackName && !looksLikeJid(fallbackName) ? fallbackName : ''
     chat.phoneNumber = phoneNumber
     chat.displayJid = phoneNumber ? displayPhone(phoneNumber) : chat.jid
     if (chat.isGroup) {
@@ -344,7 +357,9 @@ export class ContactCache {
     const chat = chats.get(jid)
     if (!chat) return
     const subject = metadata.subject
-    if (subject && !String(subject).includes('@')) chat.name = String(subject)
+    // A group subject is authoritative; only ever a real subject, never a JID.
+    // Do not reject subjects merely because they contain '@' (e.g. "Work @ Home").
+    if (subject && !looksLikeJid(subject)) chat.name = String(subject)
     if (typeof metadata.participantCount === 'number' && metadata.participantCount > 0) {
       chat.participantCount = metadata.participantCount
     }
