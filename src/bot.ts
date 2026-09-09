@@ -285,6 +285,10 @@ export class Bot {
       CHAT_SETTINGS_RESYNC_INTERVAL_MS,
       canonicalJid: (jid: string) => this.contactCache.canonicalJid(jid),
       isOwnReceipt: (receipt: any) => this.contactCache.isOwnReceipt(receipt),
+      resolveContactName: (jid: string) => {
+        const contact = this.contactCache.contactForJid(jid)
+        return contactName(contact) || ''
+      },
       chats: this.chats,
       listChats: () => this.listChats(),
       sock: this.chatStoreSocket,
@@ -1767,13 +1771,25 @@ export class Bot {
         this.contactCache.mergeChatJid(mapping.lid, phone)
       }
       for (const contact of contacts) this.contactCache.upsertContact(contact)
-      for (const chat of chats) this.upsertChatFromBaileys(chat)
+      for (const chat of chats) {
+        this.upsertChatFromBaileys(chat)
+        if (chat?.id && isJidGroup(chat.id)) {
+          // Re-link group chats to their participants+subject so names cached in
+          // Redis don't stay stale after a restart/history sync.
+          this.contactCache.rememberGroupParticipants(chat.id).catch(() => {})
+        }
+      }
       for (const message of messages) this.recordBaileysMessage(message)
       console.log(`${this.label}: history sync stored`, messages.length, 'messages', { syncType, peerDataRequestSessionId })
     })
 
     sock.ev.on('chats.upsert', items => {
-      for (const chat of items) this.upsertChatFromBaileys(chat)
+      for (const chat of items) {
+        this.upsertChatFromBaileys(chat)
+        if (chat?.id && isJidGroup(chat.id)) {
+          this.contactCache.rememberGroupParticipants(chat.id).catch(() => {})
+        }
+      }
     })
 
     sock.ev.on('chats.update', async items => {
@@ -1850,6 +1866,31 @@ export class Bot {
       for (const call of calls) {
         this.recordCallEvent(call).catch(err => console.error(`${this.label}: failed recording call`, err.message))
       }
+    })
+
+    // Group events: keep the persisted group name in sync with the authoritative
+    // subject (fixes stale/wrong group names cached in Redis), and refresh
+    // participants so chat<->contact links stay connected.
+    const applyGroupSubject = (jid: string, subject?: string | null): void => {
+      const canonical = this.contactCache.canonicalJid(jid)
+      if (!isJidGroup(canonical)) return
+      const chat = this.chats.get(canonical)
+      if (chat && subject && !String(subject).includes('@') && chat.name !== String(subject)) {
+        this.contactCache.upsertGroupMetadata(canonical, { subject })
+      } else if (chat) {
+        this.contactCache.upsertGroupMetadata(canonical, {})
+      }
+      // Refresh participants + subject from WhatsApp (subject already applied above
+      // from the event, this just re-syncs participants/count when the throttle allows).
+      this.contactCache.rememberGroupParticipants(canonical).catch(() => {})
+    }
+
+    sock.ev.on('groups.update', items => {
+      for (const item of items || []) applyGroupSubject(item.id, item.subject)
+    })
+
+    sock.ev.on('groups.upsert', items => {
+      for (const item of items || []) applyGroupSubject(item.id, item.subject)
     })
 
     sock.ev.on('contacts.upsert', items => {
@@ -1997,6 +2038,15 @@ export class Bot {
 
   async init() {
     await this.contactCache.restoreUiCache()
+    // Self-heal cached names: re-link every restored chat to its authoritative
+    // contact (personal) / group subject (groups) so wrong names that were synced
+    // into Redis earlier get corrected as soon as the bot (re)connects — simply
+    // reloading the client does not re-sync them from WhatsApp.
+    for (const [, chat] of this.chats) {
+      this.contactCache.enrichChat(chat, '')
+      this.persistChat(chat)
+      if (chat.isGroup) this.contactCache.rememberGroupParticipants(chat.jid).catch(() => {})
+    }
     // Recalculate unread counts from actual messages on restore.
     // Old chats persisted in Redis may have stale chat.unread values
     // (e.g., from WhatsApp's unreadCount override before the fix).

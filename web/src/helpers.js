@@ -19,11 +19,20 @@ export function formatDateCaption(value) {
   return new Intl.DateTimeFormat('he-IL', { dateStyle: 'full' }).format(date)
 }
 
+// Whole calendar days between two dates in local time (negative if `a` is after `b`).
+// Comparing calendar days (not raw elapsed ms) keeps day boundaries and timezone
+// offsets from misclassifying a same-day timestamp as an older date.
+function calendarDays(a, b) {
+  const da = new Date(a); da.setHours(0, 0, 0, 0)
+  const db = new Date(b); db.setHours(0, 0, 0, 0)
+  return Math.round((db - da) / (1000 * 60 * 60 * 24))
+}
+
 export function formatLastSeen(value) {
   if (!value) return ''
   const now = new Date()
   const date = new Date(value)
-  const diff = Math.floor((now - date) / (1000 * 60 * 60 * 24))
+  const diff = calendarDays(date, now)
   const time = new Intl.DateTimeFormat('he-IL', { hour: '2-digit', minute: '2-digit' }).format(date)
   if (diff === 0) return '' + time
   if (diff === 1) return 'אתמול ' + time

@@ -314,6 +314,12 @@ export type ChatStoreDeps = {
   listChats: () => UiChat[]
   sock: { current: any }
   onChatEvent: (chat: UiChat) => void
+  /**
+   * Resolve the authoritative contact-based name for a personal (non-group) chat
+   * from the linked contact cache. Returns '' when none is known so the caller
+   * can fall back to the chat's own stored name.
+   */
+  resolveContactName?: (jid: string) => string
 }
 
 // -------- Message store --------

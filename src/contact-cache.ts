@@ -334,6 +334,24 @@ export class ContactCache {
 
   // -------- Group participants --------
 
+  /**
+   * Apply authoritative, fresh group metadata (subject / participant count) to the
+   * in-memory chat and persist it. The subject is the authoritative group name, so
+   * it overwrites any stale/wrong name that a previous cache may have stored.
+   */
+  upsertGroupMetadata(jid: string, metadata: { subject?: string | null; participantCount?: number }): void {
+    const { chats, persistChat, onChatEvent } = this.deps
+    const chat = chats.get(jid)
+    if (!chat) return
+    const subject = metadata.subject
+    if (subject && !String(subject).includes('@')) chat.name = String(subject)
+    if (typeof metadata.participantCount === 'number' && metadata.participantCount > 0) {
+      chat.participantCount = metadata.participantCount
+    }
+    persistChat(chat)
+    onChatEvent(chat)
+  }
+
   async rememberGroupParticipants(jid: string): Promise<void> {
     const { redis, groupMetadataCacheKey, groupMetadataCacheMs } = this.deps
     const sock = this.deps.getSock()
@@ -344,12 +362,7 @@ export class ContactCache {
     if (!acquired) return
     try {
       const group = await sock.groupMetadata(jid)
-      const chat = this.deps.chats.get(jid)
-      if (chat) {
-        chat.name = group.subject || chat.name
-        chat.participantCount = group.participants?.length || chat.participantCount || 0
-        this.deps.persistChat(chat)
-      }
+      this.upsertGroupMetadata(jid, { subject: group.subject, participantCount: group.participants?.length || 0 })
       for (const participant of group.participants || []) this.rememberContact(participant)
     } catch {
       await redis.del(cacheKey).catch(() => {})

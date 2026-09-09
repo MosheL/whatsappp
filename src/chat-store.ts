@@ -190,7 +190,20 @@ export class ChatStore {
       chat.isArchived = Boolean(chatData.archived)
     }
 
-    if (chatData.name && !chatData.name.includes('@')) chat.name = chatData.name
+    if (!isJidGroup(jid)) {
+      // Personal (1:1) chats: the authoritative display name comes from the linked
+      // contact cache, not from Baileys' Chat.name (which can hold stale/junk values
+      // and is what ends up cached in Redis). Only fall back to the contact when a
+      // name is known; otherwise keep the existing stored name.
+      const contactDisplayName = this.deps.resolveContactName?.(jid) || ''
+      if (contactDisplayName) {
+        chat.name = contactDisplayName
+      } else if (chatData.name && !chatData.name.includes('@')) {
+        chat.name = chatData.name
+      }
+    } else if (chatData.name && !chatData.name.includes('@')) {
+      chat.name = chatData.name
+    }
     if (chatData.ephemeralSettings?.ephemeralExpType === 'permanent') chat.isMuted = true
     if (chatData.ephemeralSettings?.ephemeralExpType === 'disappearing') chat.isMuted = false
 

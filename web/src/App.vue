@@ -360,8 +360,10 @@ async function refreshAfterReconnect(hasSession = false) {
   let ok = true
   try {
     if (!hasSession) await refreshBots()
-    const results = await Promise.all([loadChats(), loadContacts()])
-    ok = results[0]
+    // Load contacts before chats so the contact-name override applies correctly.
+    await loadContacts()
+    const ok0 = await loadChats()
+    ok = ok0
     autoMarkChatRead()
     updateAppBadge(unreadTotal.value)
   } catch (err) {
@@ -431,8 +433,24 @@ async function handleSocketEvent(data) {
       }
     }
     if (data.type === 'refresh' && data.bot === selectedBot.value) {
-      await Promise.all([loadChats(), loadContacts(true)])
+      // Reload contacts first so the contact-name override applies when chats load.
+      await loadContacts(true)
+      await loadChats()
     }
+}
+
+function applyContactName(chat) {
+  // Override a personal chat's name with the address-book contact name when known.
+  // The server may use WhatsApp profile names (pushName) or a stale cached name;
+  // the client contacts list has the authoritative name. Applied on every load
+  // path (initial fetch + live events) so wrong names are corrected consistently.
+  if (chat && !chat.isGroup && typeof contactsById !== 'undefined' && contactsById?.value) {
+    const contact = contactsById.value.get(chat.jid)
+    if (contact && contact.name && contact.name !== chat.name) {
+      chat.name = contact.name
+    }
+  }
+  return chat
 }
 
 function upsertChat(chat) {
@@ -449,12 +467,7 @@ function upsertChat(chat) {
   // Override chat name with contact name from address book when available.
   // The server may use WhatsApp names (pushName) when the contact name isn't
   // synced, but the client-side contacts list has the correct address-book name.
-  if (!chat.isGroup) {
-    const contact = contactsById.value.get(chat.jid)
-    if (contact && contact.name !== chat.name) {
-      chat.name = contact.name
-    }
-  }
+  applyContactName(chat)
   if (existing) Object.assign(existing, chat)
   else chats.value.push(chat)
 }
@@ -555,6 +568,12 @@ async function loadChats(retried = false) {
     if (!authenticated.value || selectedBot.value !== bot || requestId !== chatLoadRequest) return true
     const existing = chatsById.value
     chats.value = (data.chats || []).map(chat => {
+      // Apply the address-book contact name to personal chats so a wrong/stale
+      // server-side name is corrected on every load (not just live events).
+      if (chat && !chat.isGroup && typeof contactsById !== 'undefined' && contactsById?.value) {
+        const contact = contactsById.value.get(chat.jid)
+        if (contact && contact.name && contact.name !== chat.name) chat.name = contact.name
+      }
       const current = existing.get(chat.jid)
       return current ? Object.assign(current, chat) : chat
     })
@@ -1493,8 +1512,8 @@ watch(selectedBot, async (val, oldVal) => {
   emojiPanelOpen.value = false
   if (!sessionReady) return
   try {
-    await loadChats()
     await loadContacts()
+    await loadChats()
   } catch (err) {
     error.value = err.message
   }
