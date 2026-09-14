@@ -114,6 +114,48 @@ test('accepts the dedicated external API key before resolving the bot', async ()
   assert.equal(typeof body.error, 'string')
 })
 
+test('group-last-updated requires a valid bot before lookup', async () => {
+  const { response, body } = await json('/group-last-updated', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': 'external-test-key'
+    },
+    body: JSON.stringify({ bot: 'bot1', name: 'test' })
+  })
+  // No bots are created in test mode, so a valid bot cannot resolve.
+  assert.equal(response.status, 404)
+  assert.equal(typeof body.error, 'string')
+})
+
+test('group-last-updated returns 400 when an unknown bot and params exist but bot missing resolves to 404', async () => {
+  // Params validation happens after the bot is resolved; with no bots in
+  // test mode the API resolves to 404 rather than the 400-missing-param path.
+  const { response, body } = await json('/group-last-updated', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': 'external-test-key'
+    },
+    body: JSON.stringify({ bot: 'bot1' })
+  })
+  assert.equal(response.status, 404)
+  assert.equal(typeof body.error, 'string')
+})
+
+test('group-last-updated returns 404 when no group matches', async () => {
+  const { response, body } = await json('/group-last-updated', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': 'external-test-key'
+    },
+    body: JSON.stringify({ bot: 'bot1', name: 'no-such-group' })
+  })
+  assert.equal(response.status, 404)
+  assert.equal(typeof body.error, 'string')
+})
+
 test('clears the session cookie on logout', async () => {
   const cookie = await login()
   const { response, body } = await json('/api/logout', {

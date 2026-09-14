@@ -297,6 +297,50 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
+  // Look up a group (by jid, or by name substring) and report when it was
+  // last updated (the timestamp of its most recent message).
+  if (req.method === 'POST' && url.pathname === '/group-last-updated') {
+    if (!isExternalAuthed(req)) {
+      sendJson(res, 401, { error: 'External API key required' })
+      return
+    }
+    const parsed = await readBotJson(req, res)
+    if (!parsed) return
+    const { data, bot } = parsed
+    const jid = typeof data.jid === 'string' ? data.jid.trim() : ''
+    const name = typeof data.name === 'string' ? data.name.trim() : ''
+    if (!jid && !name) {
+      sendJson(res, 400, { error: 'Missing jid or name' })
+      return
+    }
+    const groups = bot.listChats().filter(chat => chat.isGroup)
+    const matches = groups.filter(chat => {
+      if (jid) {
+        const canonical = bot.contactCache.canonicalJid(chat.jid)
+        return chat.jid === jid || canonical === jid || canonical === bot.contactCache.canonicalJid(jid)
+      }
+      return String(chat.name || '').toLowerCase().includes(name.toLowerCase())
+    })
+    if (!matches.length) {
+      sendJson(res, 404, { error: 'Group not found' })
+      return
+    }
+    const results = matches.map(group => ({
+      jid: group.jid,
+      name: group.name,
+      lastUpdated: group.timestamp || 0,
+      lastUpdatedDate: group.timestamp ? new Date(group.timestamp).toISOString() : null,
+      lastMessage: group.lastMessage,
+      participantCount: group.participantCount
+    }))
+    if (jid) {
+      sendJson(res, 200, results[0])
+    } else {
+      sendJson(res, 200, { results })
+    }
+    return
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/logout') {
     res.setHeader('Set-Cookie', sessionCookie(req, '', 0))
     sendJson(res, 200, { ok: true })

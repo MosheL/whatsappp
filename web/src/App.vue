@@ -1421,7 +1421,13 @@ function onKeydown(event) {
   }
   const target = event.target
   const isEditing = target?.matches?.('input, textarea, select, [contenteditable="true"]')
-  if (!isEditing && selectedChat.value && !showUploadModal.value && !event.ctrlKey && !event.metaKey && !event.altKey && event.key?.length === 1) {
+  // If the user has an active (non-collapsed) text selection in the thread,
+  // don't hijack keystrokes: typing here would collapse the selection and the
+  // Ctrl+C (browser copy) would then have nothing to copy. Let default
+  // behavior run so selecting + copying a message works normally.
+  const selection = window.getSelection()
+  const hasTextSelection = Boolean(selection && !selection.isCollapsed && selection.toString())
+  if (!isEditing && !hasTextSelection && selectedChat.value && !showUploadModal.value && !event.ctrlKey && !event.metaKey && !event.altKey && event.key?.length === 1) {
     event.preventDefault()
     insertComposerText(event.key)
     if (event.key === ' ') nextTick(replaceTextEmojis)

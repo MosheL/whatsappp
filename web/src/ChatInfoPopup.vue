@@ -292,6 +292,7 @@ watch(() => props.chat, (chat) => {
           </div>
           <span v-if="chat?.phoneNumber" class="chat-info-phone" dir="ltr">{{ chat.phoneNumber }}</span>
           <span v-else-if="isGroup" class="chat-info-phone">קבוצה</span>
+          <span v-if="isGroup" class="chat-info-group-id" title="מזהה קבוצה (jid)" dir="ltr">{{ chat.jid }}</span>
         </div>
       </div>
 

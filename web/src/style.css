@@ -2905,6 +2905,16 @@ button {
   font-size: 13px;
   margin-top: 2px;
 }
+.chat-info-group-id {
+  color: #54606b;
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .chat-info-section-title {
   align-items: center;
