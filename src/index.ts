@@ -418,6 +418,26 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
+  // DEBUG: raw wire content of a stored message. Privileged — requires the UI session
+  // cookie (checked below with the other /api routes) AND the external API key header,
+  // because raw exposes full message internals.
+  if (req.method === 'GET' && url.pathname === '/api/message-raw') {
+    if (!isExternalAuthed(req)) {
+      sendJson(res, 401, { error: 'External API key required' })
+      return
+    }
+    const bot = bots.get(url.searchParams.get('bot') || '')
+    const jid = url.searchParams.get('jid') || ''
+    const id = url.searchParams.get('id') || ''
+    if (!bot || !jid || !id) {
+      sendJson(res, 400, { error: 'missing bot/jid/id' })
+      return
+    }
+    const message = await bot.messageStore.getStoredMessage(jid, id)
+    sendJson(res, 200, { raw: message?.raw ?? null })
+    return
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/messages') {
     const bot = bots.get(url.searchParams.get('bot') || '')
     const jid = url.searchParams.get('jid') || ''
