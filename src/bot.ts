@@ -959,31 +959,27 @@ export class Bot {
   /**
    * Reply to a quick-reply button on an interactive (native-flow) message, using
    * the same wire format a real WhatsApp client produces when the user taps a
-   * button: an interactiveResponseMessage carrying the selected button id in
-   * nativeFlowResponseMessage.paramsJson. Business bots key their handler on the
-   * button id, so this is what they expect for interactive menus.
+   * button: a buttonsResponseMessage carrying the selected button id.
+   * (Cloud API interactive 'button' messages travel over the multi-device
+   * protocol as buttonsMessage; tapping their quick replies produces
+   * buttonsResponseMessage, which Meta's webhook delivers to the business as
+   * interactive.button_reply {id, title} — the format business bots route on.
+   * interactiveResponseMessage variants arrive as nfm_reply instead, which most
+   * bots don't parse, and templateButtonReplyMessage arrives as type 'button'
+   * with the id only in button.payload.)
    */
   async sendInteractiveButtonReply(jid: string, text: string, buttonId = '', quotedId = '', quotedJid = '') {
     if (!this.sock) throw new Error('Socket not connected')
     jid = this.contactCache.resolveOutgoingJid(jid)
     const quoted = quotedId ? await this.messageStore.getStoredMessage(quotedJid || jid, quotedId) : undefined
     if (quotedId && !quoted?.raw) console.log(`${this.label}: interactive button reply quoted message missing raw`, quotedId)
-    // Quick-reply tap on an interactive message, the way official WhatsApp
-    // clients send it: nativeFlowResponseMessage with name "options_shortcut"
-    // carrying the button id, plus contextInfo quoting the original message.
-    // Meta converts this into interactive.button_reply {id, title} in Cloud API
-    // webhooks. Other names (e.g. "bottom_sheet_flow") arrive as nfm_reply,
-    // which business bots (e.g. camel) don't parse — the click is then treated
-    // as unknown input and the bot re-sends its menu.
     const content = {
-      interactiveResponseMessage: {
-        body: { text, format: proto.Message.InteractiveResponseMessage.Body.Format.DEFAULT },
-        nativeFlowResponseMessage: {
-          name: 'options_shortcut',
-          paramsJson: JSON.stringify({ id: buttonId || text }),
-          version: 3
-        }
-      }
+      text: text,
+      buttonReply: {
+        id: buttonId || text,
+        displayText: text
+      },
+      type: 'plain' as const
     }
     const now = Date.now()
     const msg = generateWAMessageFromContent(jid, content as any, {
@@ -1000,7 +996,7 @@ export class Bot {
       fromMe: true,
       sender: 'אני',
       text,
-      type: 'interactiveResponseMessage',
+      type: 'buttonsResponseMessage',
       status: 'sent',
       timestamp: now
     })
