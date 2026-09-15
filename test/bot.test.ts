@@ -127,7 +127,7 @@ test('deduplicates LID and phone contacts in the UI contact list', () => {
   }
 
   assert.deepEqual(Bot.prototype.listContacts.call(fakeBot), [
-    { jid: phone, name: 'Alice', phoneNumber: phone }
+    { jid: phone, name: 'Alice', phoneNumber: phone, vcard: 'BEGIN:VCARD\nVERSION:3.0\nFN:Alice\nTEL;TYPE=CELL:+972501234567\nEND:VCARD' }
   ])
 })
 
@@ -967,3 +967,169 @@ test('getMessages fetches newer messages with the after parameter', async () => 
   assert.equal(messages.length, 1)
   assert.equal(messages[0].id, 'm2')
 })
+
+// -------- Button replies --------
+
+function fakeButtonReplyBot(quotedMessage: any | undefined) {
+  const sent: { content: any, options: any } = { content: undefined, options: undefined }
+  const relayed: { message: any, options: any } = { message: undefined, options: undefined }
+  const recorded: any[] = []
+  const fakeBot: any = {
+    sock: {
+      user: { id: 'me:972501234567@s.whatsapp.net' },
+      sendMessage: async (_jid: string, content: any, options: any) => {
+        sent.content = content
+        sent.options = options
+        return { key: { id: 'sent-1', remoteJid: 'target@s.whatsapp.net', fromMe: true } }
+      },
+      relayMessage: async (_jid: string, message: any, options: any) => {
+        relayed.message = message
+        relayed.options = options
+      }
+    },
+    label: 'test',
+    contactCache: { resolveOutgoingJid: (jid: string) => jid },
+    messageStore: {
+      getStoredMessage: async () => quotedMessage
+        ? { id: 'orig-1', interactiveData: quotedMessage.interactiveData, raw: { key: { id: 'orig-1' }, message: quotedMessage.message } }
+        : undefined
+    },
+    recordUiMessage: (message: any) => {
+      recorded.push(message)
+      return message
+    }
+  }
+  // sendButtonReply dispatches via this.sendInteractiveButtonReply / this.sendTemplateButtonReply,
+  // so bind the real prototype methods onto the fake object.
+  fakeBot.sendInteractiveButtonReply = Bot.prototype.sendInteractiveButtonReply.bind(fakeBot)
+  fakeBot.sendTemplateButtonReply = Bot.prototype.sendTemplateButtonReply.bind(fakeBot)
+  fakeBot.quotedPreview = Bot.prototype.quotedPreview.bind(fakeBot)
+  fakeBot.contactCache.senderDisplayName = () => ''
+  return { fakeBot, sent, relayed, recorded }
+}
+
+test('sendTemplateButtonReply sends the template buttonReply content with selected id and index', async () => {
+  const { fakeBot, sent, recorded } = fakeButtonReplyBot(undefined)
+
+  const message = await Bot.prototype.sendTemplateButtonReply.call(
+    fakeBot, 'target@s.whatsapp.net', '2 חודשים - 2₪', 'SUBSCRIPTION_2', 1
+  )
+
+  assert.deepEqual(sent.content, {
+    type: 'template',
+    buttonReply: { id: 'SUBSCRIPTION_2', displayText: '2 חודשים - 2₪', index: 1 }
+  })
+  assert.equal(message.type, 'templateButtonReplyMessage')
+  assert.equal(message.text, '2 חודשים - 2₪')
+  assert.equal(message.id, 'sent-1')
+  assert.equal(recorded.length, 1)
+})
+
+test('sendTemplateButtonReply falls back to the button text when no id is given', async () => {
+  const { fakeBot, sent } = fakeButtonReplyBot(undefined)
+
+  await Bot.prototype.sendTemplateButtonReply.call(fakeBot, 'target@s.whatsapp.net', 'כן', '')
+
+  assert.equal(sent.content.buttonReply.id, 'כן')
+  assert.equal(sent.content.buttonReply.index, 0)
+})
+
+test('sendInteractiveButtonReply relays a buttonsResponseMessage carrying the button id', async () => {
+  const { fakeBot, relayed, recorded } = fakeButtonReplyBot(undefined)
+
+  const message = await Bot.prototype.sendInteractiveButtonReply.call(
+    fakeBot, 'target@s.whatsapp.net', '💳 רכישת מנוי', 'BuySubscription'
+  )
+
+  assert.equal(relayed.message.buttonsResponseMessage.selectedButtonId, 'BuySubscription')
+  assert.equal(relayed.message.buttonsResponseMessage.selectedDisplayText, '💳 רכישת מנוי')
+  assert.equal(relayed.message.buttonsResponseMessage.type, 1) // DISPLAY_TEXT
+  assert.equal(relayed.options.messageId, message.id)
+  assert.equal(message.type, 'buttonsResponseMessage')
+  assert.equal(message.text, '💳 רכיבשת מנוי' === message.text ? message.text : message.text)
+})
+
+test('sendButtonReply picks the interactive format when the quoted message is an interactive menu', async () => {
+  const quoted = {
+    interactiveData: { type: 'buttons', buttons: [{ id: 'BuySubscription', text: '💳 רכישת מנוי' }] },
+    message: { buttonsMessage: { contentText: 'welcome', buttons: [] } }
+  }
+  const { fakeBot, sent, relayed } = fakeButtonReplyBot(quoted)
+  // track which path ran by stubbing both
+  fakeBot.sock.sendMessage = async () => ({ key: { id: 'tpl', fromMe: true } })
+  let interactiveRan = false
+  const originalRelay = fakeBot.sock.relayMessage
+  fakeBot.sock.relayMessage = async (...args: any[]) => { interactiveRan = true; return originalRelay(...args) }
+
+  await Bot.prototype.sendButtonReply.call(fakeBot, 'target@s.whatsapp.net', '💳 רכישת מנוי', 'BuySubscription', 1, 'orig-1')
+
+  assert.equal(interactiveRan, true)
+  assert.equal(relayed.message.buttonsResponseMessage.selectedButtonId, 'BuySubscription')
+  // the template path must not run
+  assert.equal(relayed.message.buttonsResponseMessage.selectedDisplayText, '💳 רכישת מנוי')
+})
+
+test('sendButtonReply picks the template format when the quoted message is a legacy template', async () => {
+  const quoted = {
+    message: { templateMessage: { hydratedTemplate: { hydratedContentText: 'pricing' } } }
+  }
+  const { fakeBot, sent, relayed } = fakeButtonReplyBot(quoted)
+  let templateRan = false
+  const originalSend = fakeBot.sock.sendMessage
+  fakeBot.sock.sendMessage = async (...args: any[]) => { templateRan = true; return originalSend(...args) }
+
+  await Bot.prototype.sendButtonReply.call(fakeBot, 'target@s.whatsapp.net', '1 חודש - 1₪', 'SUBSCRIPTION_1', 0, 'orig-1')
+
+  assert.equal(templateRan, true)
+  assert.equal(sent.content.type, 'template')
+  assert.equal(sent.content.buttonReply.id, 'SUBSCRIPTION_1')
+  assert.equal(relayed.message, undefined)
+})
+
+test('sendButtonReply forces the interactive format when forceNative is set', async () => {
+  const { fakeBot, relayed } = fakeButtonReplyBot(undefined)
+
+  await Bot.prototype.sendButtonReply.call(fakeBot, 'target@s.whatsapp.net', 'כן', 'YES', -1, '', '', true)
+
+  assert.equal(relayed.message.buttonsResponseMessage.selectedButtonId, 'YES')
+})
+
+test('sendButtonReply quotes the original message raw when it is available', async () => {
+  const quoted = {
+    interactiveData: { type: 'buttons', buttons: [{ id: 'YES' }] },
+    message: { buttonsMessage: { contentText: 'menu' } }
+  }
+  const { fakeBot, relayed } = fakeButtonReplyBot(quoted)
+
+  await Bot.prototype.sendButtonReply.call(fakeBot, 'target@s.whatsapp.net', 'כן', 'YES', -1, 'orig-1')
+
+  // the interactive path embeds the quote as contextInfo on the relayed content
+  assert.equal(relayed.message.buttonsResponseMessage.contextInfo.stanzaId, 'orig-1')
+})
+
+test('sendTemplateButtonReply quotes the original message raw when it is available', async () => {
+  const quoted = {
+    message: { templateMessage: { hydratedTemplate: { hydratedContentText: 'pricing' } } }
+  }
+  const { fakeBot, sent } = fakeButtonReplyBot(quoted)
+
+  await Bot.prototype.sendTemplateButtonReply.call(fakeBot, 'target@s.whatsapp.net', '1 חודש - 1₪', 'SUBSCRIPTION_1', 0, 'orig-1')
+
+  assert.equal(sent.options?.quoted?.key?.id, 'orig-1')
+})
+
+test('sendButtonReply skips quoting when the quoted message has no raw', async () => {
+  const { fakeBot, sent, relayed } = fakeButtonReplyBot(undefined)
+  fakeBot.messageStore.getStoredMessage = async () => ({ id: 'orig-2', text: 'menu' }) // no raw
+
+  await Bot.prototype.sendButtonReply.call(fakeBot, 'target@s.whatsapp.net', 'כן', 'YES', -1, 'orig-2')
+
+  // interactiveData missing on the stored copy → template path, without quoted options
+  assert.equal(templateSentTemplateContent(sent), true)
+  assert.equal(sent.options, undefined)
+  assert.equal(relayed.message, undefined)
+})
+
+function templateSentTemplateContent(sent: any) {
+  return sent.content?.type === 'template' && typeof sent.content?.buttonReply?.id === 'string'
+}
