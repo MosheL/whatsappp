@@ -974,12 +974,11 @@ export class Bot {
     const quoted = quotedId ? await this.messageStore.getStoredMessage(quotedJid || jid, quotedId) : undefined
     if (quotedId && !quoted?.raw) console.log(`${this.label}: interactive button reply quoted message missing raw`, quotedId)
     const content = {
-      text: text,
-      buttonReply: {
-        id: buttonId || text,
-        displayText: text
-      },
-      type: 'plain' as const
+      buttonsResponseMessage: {
+        selectedButtonId: buttonId || text,
+        selectedDisplayText: text,
+        type: proto.Message.ButtonsResponseMessage.Type.DISPLAY_TEXT
+      }
     }
     const now = Date.now()
     const msg = generateWAMessageFromContent(jid, content as any, {
