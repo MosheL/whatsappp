@@ -977,7 +977,7 @@ export class Bot {
     // as unknown input and the bot re-sends its menu.
     const content = {
       interactiveResponseMessage: {
-        body: { text, format: proto.Message.InteractiveResponseMessage.Body.Format.EXTENSIONS_1 },
+        body: { text, format: proto.Message.InteractiveResponseMessage.Body.Format.DEFAULT },
         nativeFlowResponseMessage: {
           name: 'options_shortcut',
           paramsJson: JSON.stringify({ id: buttonId || text }),
