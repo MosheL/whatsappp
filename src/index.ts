@@ -637,24 +637,18 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         sendJson(res, 400, { error: 'חסר נמען או טקסט' })
         return
       }
-      // Interactive (native-flow) menus need an interactiveResponseMessage; legacy
-      // template messages use templateButtonReplyMessage. Opt in with native:true.
-      const message = parsed.data.native
-        ? await parsed.bot.sendInteractiveButtonReply(
-            parsed.data.jid,
-            parsed.data.text,
-            parsed.data.buttonId || '',
-            parsed.data.quotedId || '',
-            parsed.data.quotedJid || ''
-          )
-        : await parsed.bot.sendTemplateButtonReply(
-            parsed.data.jid,
-            parsed.data.text,
-            parsed.data.buttonId || '',
-            Number.isFinite(parsed.data.selectedIndex) ? parsed.data.selectedIndex : -1,
-            parsed.data.quotedId || '',
-            parsed.data.quotedJid || ''
-          )
+      // Pick the wire format by the quoted message type: interactive (native-flow)
+      // menus get interactiveResponseMessage, legacy templates keep
+      // templateButtonReplyMessage. "native": true forces the interactive format.
+      const message = await parsed.bot.sendButtonReply(
+        parsed.data.jid,
+        parsed.data.text,
+        parsed.data.buttonId || '',
+        Number.isFinite(parsed.data.selectedIndex) ? parsed.data.selectedIndex : -1,
+        parsed.data.quotedId || '',
+        parsed.data.quotedJid || '',
+        parsed.data.native === true
+      )
       sendJson(res, 200, { ok: true, message })
     } catch (err: any) {
       sendJson(res, 500, { error: err.message })

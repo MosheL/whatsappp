@@ -1001,6 +1001,21 @@ export class Bot {
     return message
   }
 
+  /**
+   * Reply to a quick-reply button, choosing the wire format by the quoted
+   * message: interactive (native-flow) menus get an interactiveResponseMessage
+   * — the format official WhatsApp clients send and business bots parse for the
+   * button id — while legacy template messages keep templateButtonReplyMessage.
+   * forceNative overrides the detection when the caller knows better.
+   */
+  async sendButtonReply(jid: string, text: string, buttonId = '', selectedIndex = -1, quotedId = '', quotedJid = '', forceNative = false) {
+    const quoted = quotedId ? await this.messageStore.getStoredMessage(quotedJid || jid, quotedId) : undefined
+    if (forceNative || quoted?.interactiveData) {
+      return this.sendInteractiveButtonReply(jid, text, buttonId, quotedId, quotedJid)
+    }
+    return this.sendTemplateButtonReply(jid, text, buttonId, selectedIndex, quotedId, quotedJid)
+  }
+
   async resolveLinkPreview(text: string): Promise<WAUrlInfo | undefined> {
     const trimmedText = text.trim()
     if (!trimmedText) return undefined
