@@ -418,20 +418,6 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
-  // TEMP DEBUG: raw wire content of a stored message (for format capture). Remove later.
-  if (req.method === 'GET' && url.pathname === '/api/message-raw') {
-    const bot = bots.get(url.searchParams.get('bot') || '')
-    const jid = url.searchParams.get('jid') || ''
-    const id = url.searchParams.get('id') || ''
-    if (!bot || !id) {
-      sendJson(res, 400, { error: 'missing bot/id' })
-      return
-    }
-    const message = await bot.messageStore.getStoredMessage(jid, id)
-    sendJson(res, 200, { raw: message?.raw ?? null })
-    return
-  }
-
   if (req.method === 'GET' && url.pathname === '/api/messages') {
     const bot = bots.get(url.searchParams.get('bot') || '')
     const jid = url.searchParams.get('jid') || ''
