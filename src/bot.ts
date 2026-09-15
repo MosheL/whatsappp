@@ -2,6 +2,7 @@ import {
   DisconnectReason,
   downloadMediaMessage,
   fetchLatestBaileysVersion,
+  generateWAMessageFromContent,
   getUrlInfo,
   initAuthCreds,
   isJidGroup,
@@ -926,6 +927,7 @@ export class Bot {
     if (!this.sock) throw new Error('Socket not connected')
     jid = this.contactCache.resolveOutgoingJid(jid)
     const quoted = quotedId ? await this.messageStore.getStoredMessage(quotedJid || jid, quotedId) : undefined
+    if (quotedId && !quoted?.raw) console.log(`${this.label}: template button reply quoted message missing raw`, quotedId)
     const now = Date.now()
     const sent = await this.sock.sendMessage(
       jid,
@@ -948,6 +950,51 @@ export class Bot {
       sender: 'אני',
       text,
       type: 'templateButtonReplyMessage',
+      status: 'sent',
+      timestamp: now
+    })
+    return message
+  }
+
+  /**
+   * Reply to a quick-reply button on an interactive (native-flow) message, using
+   * the same wire format a real WhatsApp client produces when the user taps a
+   * button: an interactiveResponseMessage carrying the selected button id in
+   * nativeFlowResponseMessage.paramsJson. Business bots key their handler on the
+   * button id, so this is what they expect for interactive menus.
+   */
+  async sendInteractiveButtonReply(jid: string, text: string, buttonId = '', quotedId = '', quotedJid = '') {
+    if (!this.sock) throw new Error('Socket not connected')
+    jid = this.contactCache.resolveOutgoingJid(jid)
+    const quoted = quotedId ? await this.messageStore.getStoredMessage(quotedJid || jid, quotedId) : undefined
+    if (quotedId && !quoted?.raw) console.log(`${this.label}: interactive button reply quoted message missing raw`, quotedId)
+    const paramsJson = JSON.stringify({ id: buttonId || text, text })
+    const content = {
+      interactiveResponseMessage: {
+        body: { text, format: proto.Message.InteractiveResponseMessage.Body.Format.EXTENSIONS_1 },
+        nativeFlowResponseMessage: {
+          name: 'bottom_sheet_flow',
+          paramsJson,
+          version: 3
+        }
+      }
+    }
+    const now = Date.now()
+    const msg = generateWAMessageFromContent(jid, content as any, {
+      userJid: this.sock.user?.id,
+      timestamp: new Date(now),
+      quoted: quoted?.raw ? quoted.raw : undefined
+    })
+    await this.sock.relayMessage(jid, msg.message, { messageId: msg.key.id })
+    const message = this.recordUiMessage({
+      id: msg.key.id,
+      jid,
+      key: msg.key,
+      quoted: quoted ? this.quotedPreview(quoted) : undefined,
+      fromMe: true,
+      sender: 'אני',
+      text,
+      type: 'interactiveResponseMessage',
       status: 'sent',
       timestamp: now
     })

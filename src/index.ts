@@ -637,14 +637,24 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         sendJson(res, 400, { error: 'חסר נמען או טקסט' })
         return
       }
-      const message = await parsed.bot.sendTemplateButtonReply(
-        parsed.data.jid,
-        parsed.data.text,
-        parsed.data.buttonId || '',
-        Number.isFinite(parsed.data.selectedIndex) ? parsed.data.selectedIndex : -1,
-        parsed.data.quotedId || '',
-        parsed.data.quotedJid || ''
-      )
+      // Interactive (native-flow) menus need an interactiveResponseMessage; legacy
+      // template messages use templateButtonReplyMessage. Opt in with native:true.
+      const message = parsed.data.native
+        ? await parsed.bot.sendInteractiveButtonReply(
+            parsed.data.jid,
+            parsed.data.text,
+            parsed.data.buttonId || '',
+            parsed.data.quotedId || '',
+            parsed.data.quotedJid || ''
+          )
+        : await parsed.bot.sendTemplateButtonReply(
+            parsed.data.jid,
+            parsed.data.text,
+            parsed.data.buttonId || '',
+            Number.isFinite(parsed.data.selectedIndex) ? parsed.data.selectedIndex : -1,
+            parsed.data.quotedId || '',
+            parsed.data.quotedJid || ''
+          )
       sendJson(res, 200, { ok: true, message })
     } catch (err: any) {
       sendJson(res, 500, { error: err.message })
