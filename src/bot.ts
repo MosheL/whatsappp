@@ -927,10 +927,11 @@ export class Bot {
     jid = this.contactCache.resolveOutgoingJid(jid)
     const now = Date.now()
     const sent = await this.sock.sendMessage(jid, {
-      templateButtonReplyMessage: {
-        selectedId: buttonId || text,
-        selectedDisplayText: text,
-        ...(selectedIndex >= 0 ? { selectedIndex } : {})
+      type: 'template',
+      buttonReply: {
+        id: buttonId || text,
+        displayText: text,
+        index: selectedIndex >= 0 ? selectedIndex : 0
       }
     })
     const message = this.recordUiMessage({
