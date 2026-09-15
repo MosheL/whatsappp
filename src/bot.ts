@@ -922,22 +922,28 @@ export class Bot {
   }
 
   /** Reply to a template quick-reply button, the way WhatsApp Web does. */
-  async sendTemplateButtonReply(jid: string, text: string, buttonId = '', selectedIndex = -1) {
+  async sendTemplateButtonReply(jid: string, text: string, buttonId = '', selectedIndex = -1, quotedId = '', quotedJid = '') {
     if (!this.sock) throw new Error('Socket not connected')
     jid = this.contactCache.resolveOutgoingJid(jid)
+    const quoted = quotedId ? await this.messageStore.getStoredMessage(quotedJid || jid, quotedId) : undefined
     const now = Date.now()
-    const sent = await this.sock.sendMessage(jid, {
-      type: 'template',
-      buttonReply: {
-        id: buttonId || text,
-        displayText: text,
-        index: selectedIndex >= 0 ? selectedIndex : 0
-      }
-    })
+    const sent = await this.sock.sendMessage(
+      jid,
+      {
+        type: 'template',
+        buttonReply: {
+          id: buttonId || text,
+          displayText: text,
+          index: selectedIndex >= 0 ? selectedIndex : 0
+        }
+      },
+      quoted?.raw ? { quoted: quoted.raw } : undefined
+    )
     const message = this.recordUiMessage({
       id: sent?.key?.id || `${now}`,
       jid,
       key: sent?.key || { remoteJid: jid, id: `${now}`, fromMe: true } as WAMessageKey,
+      quoted: quoted ? this.quotedPreview(quoted) : undefined,
       fromMe: true,
       sender: 'אני',
       text,

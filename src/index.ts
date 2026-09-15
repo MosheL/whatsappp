@@ -641,7 +641,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         parsed.data.jid,
         parsed.data.text,
         parsed.data.buttonId || '',
-        Number.isFinite(parsed.data.selectedIndex) ? parsed.data.selectedIndex : -1
+        Number.isFinite(parsed.data.selectedIndex) ? parsed.data.selectedIndex : -1,
+        parsed.data.quotedId || '',
+        parsed.data.quotedJid || ''
       )
       sendJson(res, 200, { ok: true, message })
     } catch (err: any) {

@@ -950,7 +950,7 @@ async function sendButtonReply(payload) {
     const data = await api('/api/send-button-reply', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bot, jid, text, buttonId, selectedIndex })
+      body: JSON.stringify({ bot, jid, text, buttonId, selectedIndex, quotedId: messageId })
     })
     if (data.message) {
       upsertMessage(data.message)
