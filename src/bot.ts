@@ -968,15 +968,21 @@ export class Bot {
     jid = this.contactCache.resolveOutgoingJid(jid)
     const quoted = quotedId ? await this.messageStore.getStoredMessage(quotedJid || jid, quotedId) : undefined
     if (quotedId && !quoted?.raw) console.log(`${this.label}: interactive button reply quoted message missing raw`, quotedId)
-    // Plain quick-reply tap: body text only, quoting the original message.
-    // Meta resolves the button id by matching this against the quoted original's
-    // buttons and delivers interactive.button_reply {id, title} to Cloud API
-    // webhooks. Including nativeFlowResponseMessage instead makes Meta deliver
-    // nfm_reply, which business bots (e.g. camel) don't parse — the click is
-    // then treated as unknown input and the bot re-sends its menu.
+    // Quick-reply tap on an interactive message, the way official WhatsApp
+    // clients send it: nativeFlowResponseMessage with name "options_shortcut"
+    // carrying the button id, plus contextInfo quoting the original message.
+    // Meta converts this into interactive.button_reply {id, title} in Cloud API
+    // webhooks. Other names (e.g. "bottom_sheet_flow") arrive as nfm_reply,
+    // which business bots (e.g. camel) don't parse — the click is then treated
+    // as unknown input and the bot re-sends its menu.
     const content = {
       interactiveResponseMessage: {
-        body: { text }
+        body: { text, format: proto.Message.InteractiveResponseMessage.Body.Format.EXTENSIONS_1 },
+        nativeFlowResponseMessage: {
+          name: 'options_shortcut',
+          paramsJson: JSON.stringify({ id: buttonId || text }),
+          version: 3
+        }
       }
     }
     const now = Date.now()
