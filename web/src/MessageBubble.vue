@@ -51,7 +51,7 @@ const fullTime = computed(() => formatDateFull(props.message.timestamp))
           draggable="true"
           title="גרור להעברה"
           @dragstart.stop="beginBubbleDrag($event, message)"
-          @dragend="$event.target.removeAttribute('dragging')"
+          @dragend="$event.currentTarget.removeAttribute('dragging')"
         >
           <svg class="drag-icon" viewBox="0 0 8 8" aria-hidden="true">
             <circle cx="2" cy="2" r="0.8" fill="currentColor"/>

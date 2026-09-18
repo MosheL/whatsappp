@@ -51,6 +51,8 @@ function onSelectionChange() {
 
 onMounted(() => {
   document.addEventListener('selectionchange', onSelectionChange)
+  document.addEventListener('dragend', cleanupDragState)
+  document.addEventListener('drop', cleanupDragState)
   onClickOutside(messageMenuRef, () => {
     if (props.actionMessageId) {
       emit('toggle-message-menu', actionMessage.value)
@@ -59,6 +61,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  document.removeEventListener('dragend', cleanupDragState)
+  document.removeEventListener('drop', cleanupDragState)
   for (const timer of typingTimers.values()) clearTimeout(timer)
   typingTimers.clear()
   for (const url of Object.values(loadedMedia.value)) {
@@ -193,8 +197,24 @@ function finishMediaLoad(message) {
   loadingMedia.value = next
 }
 
+// While an HTML5 drag is in progress the source row must stay rendered.
+// Rows are skipped off-screen by content-visibility:auto; if that happens
+// mid-drag (e.g. a new message auto-scrolls the thread), Chromium never
+// fires dragend and the whole window stays stuck in drag mode with the
+// drag cursor swallowing every click. Pin the row out of the optimization
+// until the drag ends, and clean up globally in case dragend is missed.
+function markDragSource(event) {
+  event.currentTarget?.closest?.('.message-row')?.classList.add('drag-source')
+}
+
+function cleanupDragState() {
+  document.querySelectorAll('.drag-source').forEach(el => el.classList.remove('drag-source'))
+  document.querySelectorAll('[dragging]').forEach(el => el.removeAttribute('dragging'))
+}
+
 function beginMediaDrag(event, message) {
   if (!event.dataTransfer) return
+  markDragSource(event)
   event.dataTransfer.effectAllowed = 'copy'
   event.dataTransfer.setData('application/x-whatsapp-media', JSON.stringify({
     bot: props.selectedBot,
@@ -245,7 +265,8 @@ function beginBubbleDrag(event, message) {
     text: message.text || ''
   }))
   event.dataTransfer.setData('text/plain', message.text || mediaFileName(message) || 'הודעה')
-  event.target.setAttribute('dragging', '')
+  markDragSource(event)
+  event.currentTarget.setAttribute('dragging', '')
 }
 
 // Copy message text with 'אני:' prefix for fromMe messages
