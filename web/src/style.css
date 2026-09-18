@@ -963,6 +963,9 @@ button {
   margin-inline-end: 2px;
   opacity: 0;
   order: 1;
+  pointer-events: none; /* invisible + sticky inside content-visibility rows can
+                           otherwise intercept clicks anywhere (Chromium hit-test
+                           bug); re-enabled on row hover, when it is visible */
   position: sticky;
   top: 4px;
   width: 24px;
@@ -980,10 +983,12 @@ button {
 .message-item:hover .drag-handle,
 .message-item:hover .message-menu-button {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .message-item .message-menu-button.open {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .drag-handle:active {
@@ -1008,6 +1013,7 @@ button {
   order: 2;
   overflow: clip;
   padding: 0;
+  pointer-events: none; /* same guard as .drag-handle: never hit-testable while invisible */
   position: sticky;
   top: 4px;
   width: 24px;
