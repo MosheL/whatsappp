@@ -712,15 +712,6 @@ button {
   content-visibility: visible;
 }
 
-/* While a message/media is being dragged from this row, keep it fully
-   rendered: content-visibility skipping the source row mid-drag leaves
-   Chromium stuck in drag mode (drag cursor, all clicks swallowed, no
-   dragend). The class is added on dragstart and removed on dragend/drop. */
-.message-row.drag-source {
-  contain: none;
-  content-visibility: visible;
-}
-
 .message-item {
   align-items: flex-start;
   align-self: stretch;
