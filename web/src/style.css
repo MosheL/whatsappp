@@ -312,6 +312,15 @@ button {
   padding: 2px 5px;
 }
 
+.chat-filter-tabs .archive-clear-btn {
+  color: #b3261e;
+  font-size: 12px;
+}
+
+.chat-filter-tabs .archive-clear-btn:hover {
+  background: #fbe9e7;
+}
+
 * {
   scrollbar-color: #9aa9b3 transparent;
   scrollbar-width: thin;
@@ -494,6 +503,14 @@ button {
 
 .chat-menu-dropdown button:hover {
   background: #f0f5f3;
+}
+
+.chat-menu-dropdown button.danger {
+  color: #b3261e;
+}
+
+.chat-menu-dropdown button.danger:hover {
+  background: #fbe9e7;
 }
 
 .mark-read-v {

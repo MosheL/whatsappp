@@ -414,6 +414,17 @@ async function handleSocketEvent(data) {
       messages.value = []
       selectedChat.value = ''
     }
+    if (data.type === 'chat-cleared' && data.bot === selectedBot.value) {
+      const chat = chats.value.find(item => item.jid === data.jid)
+      if (chat) clearChatLocally(chat)
+    }
+    if (data.type === 'chat-deleted' && data.bot === selectedBot.value) {
+      chats.value = chats.value.filter(item => item.jid !== data.jid)
+      if (selectedChat.value === data.jid) {
+        selectedChat.value = ''
+        messages.value = []
+      }
+    }
     if (data.type === 'chat') {
       if (data.bot === selectedBot.value) {
         upsertChat(data.chat)
@@ -778,6 +789,64 @@ async function toggleArchiveChat(jid, archive) {
     // Update local chat state
     const chat = chats.value.find(c => c.jid === jid)
     if (chat) chat.isArchived = archive
+  } catch (err) {
+    error.value = err.message
+  }
+}
+
+async function clearChatContent(jid) {
+  if (!jid || !selectedBot.value || !authenticated.value) return
+  const bot = selectedBot.value
+  const chat = chats.value.find(c => c.jid === jid)
+  const label = chat?.isGroup ? 'קבוצה' : 'שיחה'
+  if (!window.confirm(`לנקות את תוכן ה${label}? הפעולה תמחק את ההודעות גם מהמכשיר.`)) return
+  try {
+    await api('/api/chat-clear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bot, jid, scope: 'both' })
+    })
+    // Ignore the result if the user switched accounts while the request was in flight.
+    if (bot !== selectedBot.value) return
+    // Apply the clear locally as well (covers when the socket event is missed).
+    const target = chats.value.find(c => c.jid === jid)
+    clearChatLocally(target)
+  } catch (err) {
+    error.value = err.message
+  }
+}
+
+function clearChatLocally(chat) {
+  if (!chat) return
+  chat.lastMessage = ''
+  if (chat.jid === selectedChat.value) messages.value = []
+}
+
+async function clearAllArchived() {
+  if (!selectedBot.value || !authenticated.value) return
+  if (!archivedCount.value) return
+  const bot = selectedBot.value
+  if (!window.confirm(`לנקות את כל השיחות בארכיון (${archivedCount.value})? הפעולה תמחק את ההודעות גם מהמכשיר.`)) return
+  try {
+    const result = await api('/api/archive-clear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bot, scope: 'both' })
+    })
+    // Ignore the result if the user switched accounts while the request was in flight.
+    if (bot !== selectedBot.value) return
+    // Only clear the chats that actually succeeded on the server.
+    const clearedJids = new Set(
+      (result?.results || []).filter(item => item.ok).map(item => item.jid)
+    )
+    if (clearedJids.size) {
+      for (const chat of chats.value) {
+        if (clearedJids.has(chat.jid)) chat.lastMessage = ''
+      }
+      if (currentChat.value && clearedJids.has(currentChat.value.jid)) messages.value = []
+    }
+    const failed = result?.failed || 0
+    error.value = failed ? `לא ניתן היה לנקות ${failed} שיחות בארכיון` : ''
   } catch (err) {
     error.value = err.message
   }
@@ -1625,6 +1694,8 @@ onUnmounted(() => {
           ארכיון
           <b v-if="archivedUnreadCount">{{ archivedUnreadCount }}</b>
         </button>
+        <button v-if="showArchived" class="archive-clear-btn" type="button" title="נקה את כל תוכן השיחות בארכיון" @click="clearAllArchived">נקה הכל
+        </button>
       </div>
 
       <ChatList
@@ -1637,6 +1708,7 @@ onUnmounted(() => {
         @mark-read="markChatRead"
         @toggle-archive="toggleArchiveChat"
         @toggle-mute="toggleMuteChat"
+        @clear-chat="clearChatContent"
         @chat-drag-over="onChatDragOver"
         @chat-drag-leave="onChatDragLeave"
         @chat-drop="onChatDrop"

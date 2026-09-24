@@ -796,6 +796,56 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/chat-clear') {
+    const parsed = await readBotJson(req, res)
+    if (!parsed) return
+    try {
+      if (!parsed.data.jid) {
+        sendJson(res, 400, { error: 'חסר jid' })
+        return
+      }
+      const scope = ['local', 'remote', 'both'].includes(parsed.data.scope) ? parsed.data.scope : 'both'
+      const result = await parsed.bot.clearChat(parsed.data.jid, scope)
+      sendJson(res, 200, result)
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/chat-delete') {
+    const parsed = await readBotJson(req, res)
+    if (!parsed) return
+    try {
+      if (!parsed.data.jid) {
+        sendJson(res, 400, { error: 'חסר jid' })
+        return
+      }
+      const scope = ['local', 'remote', 'both'].includes(parsed.data.scope) ? parsed.data.scope : 'both'
+      const result = await parsed.bot.deleteChat(parsed.data.jid, scope)
+      sendJson(res, 200, result)
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/archive-clear') {
+    const parsed = await readBotJson(req, res)
+    if (!parsed) return
+    try {
+      const scope = ['local', 'remote', 'both'].includes(parsed.data.scope) ? parsed.data.scope : 'both'
+      const result = await parsed.bot.clearArchivedChats({
+        scope,
+        deleteChats: parsed.data.deleteChats === true
+      })
+      sendJson(res, 200, result)
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/send-file') {
     try {
       const data = await readMultipart(req)

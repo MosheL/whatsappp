@@ -89,6 +89,17 @@ export class MessageStore {
     await tx.exec()
   }
 
+  /** Delete every cached media entry for a chat (best-effort). */
+  async clearMediaStore(jid: string): Promise<void> {
+    const { redis, messageIndexKey, mediaCacheKey, canonicalJid } = this.deps
+    jid = canonicalJid(jid)
+    const ids = await redis.zrange(messageIndexKey(jid), 0, -1)
+    if (!ids.length) return
+    const tx = redis.multi()
+    for (const id of ids) tx.del(mediaCacheKey(jid, id))
+    await tx.exec()
+  }
+
   async mergeMessageStore(fromJid: string, toJid: string): Promise<void> {
     const { redis, messageIndexKey, messagePayloadKey, messages } = this.deps
     if (!fromJid || !toJid || fromJid === toJid) return

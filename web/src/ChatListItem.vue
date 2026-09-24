@@ -11,7 +11,7 @@ const props = defineProps({
   selectedBot: { type: String, default: '' }
 })
 
-const emit = defineEmits(['select-chat', 'mark-read', 'chat-drag-over', 'chat-drag-leave', 'chat-drop', 'toggle-archive', 'toggle-mute'])
+const emit = defineEmits(['select-chat', 'mark-read', 'chat-drag-over', 'chat-drag-leave', 'chat-drop', 'toggle-archive', 'toggle-mute', 'clear-chat'])
 
 // Track menu state for this chat item
 const isMenuOpen = ref(false)
@@ -135,6 +135,9 @@ const previewText = computed(() => props.chat.lastMessage || '')
       </button>
       <button type="button" @click="emit('toggle-mute', chat.jid, !chat.isMuted)">
         {{ chat.isMuted ? 'בטל השתקה' : 'השתק שיחה' }}
+      </button>
+      <button type="button" class="danger" @click="emit('clear-chat', chat.jid)">
+        {{ chat.isGroup ? 'נקה תוכן קבוצה' : 'נקה תוכן שיחה' }}
       </button>
     </div>
   </Teleport>

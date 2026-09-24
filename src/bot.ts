@@ -602,6 +602,125 @@ export class Bot {
     return { ok: true, archived: archive }
   }
 
+  /**
+   * Build the `lastMessages` payload required by Baileys' chatModify for
+   * archive/clear/delete sync actions. The list must be sorted reverse
+   * chronologically and only needs to cover the most recent messages.
+   */
+  private async lastMessagesForChat(jid: string): Promise<proto.SyncActionValue.ISyncActionMessageRange['messages']> {
+    let messages = this.messages.get(jid) || []
+    if (!messages.length) {
+      const stored = await this.messageStore.getStoredMessages(jid, 20)
+      messages = stored
+    }
+    const lastMessages = messages
+      .slice(-20)
+      .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+      .map(message => {
+        const seconds = message.timestamp || 0
+        const key: proto.IMessageKey = {
+          ...(message.key || {}),
+          id: message.id,
+          remoteJid: jid,
+          fromMe: Boolean(message.fromMe)
+        }
+        return { key, messageTimestamp: Math.floor(seconds / 1000) }
+      })
+      // Baileys rejects group messages from others without a participant.
+      .filter(entry => !(isJidGroup(jid) && !entry.key.fromMe && !entry.key.participant))
+    return lastMessages.length ? lastMessages : undefined
+  }
+
+  /**
+   * Clear the content of a chat/group.
+   * - `local`: wipe messages + media from the server store only.
+   * - `remote`: also tell the phone to clear the chat (keep the chat entry).
+   * - `both` (default): local + remote.
+   */
+  async clearChat(jid: string, scope: 'local' | 'remote' | 'both' = 'both') {
+    jid = this.contactCache.canonicalJid(jid)
+    if (scope === 'remote' || scope === 'both') {
+      if (!this.sock) throw new Error('Socket not connected')
+      const lastMessages = await this.lastMessagesForChat(jid)
+      await this.sock.chatModify({ clear: true, lastMessages }, jid)
+    }
+    if (scope === 'local' || scope === 'both') {
+      await this.clearLocalChatContent(jid)
+      this.events.emit('event', { type: 'chat-cleared', bot: this.authKey, jid })
+    }
+    return { ok: true, jid, scope }
+  }
+
+  /** Remove stored messages + cached media for a chat without touching the chat entry. */
+  async clearLocalChatContent(jid: string) {
+    jid = this.contactCache.canonicalJid(jid)
+    const chat = this.chats.get(jid)
+    if (chat) {
+      chat.lastMessage = ''
+      chat.lastMessageId = ''
+      chat.lastMessageFromMe = false
+      chat.lastMessageStatus = undefined
+      chat.lastMessageReceipt = undefined
+      chat.lastMessageUserReceipt = undefined
+      chat.unread = 0
+      this.persistChat(chat)
+      this.events.emit('event', { type: 'chat', bot: this.authKey, chat })
+    }
+    this.messages.delete(jid)
+    await this.messageStore.clearMediaStore(jid).catch(() => {})
+    await this.messageStore.removeMessageStore(jid)
+  }
+
+  /**
+   * Delete a chat/group entirely.
+   * - `local`: remove messages, media and the chat entry from the server store.
+   * - `remote`: also delete the chat from the phone.
+   * - `both` (default): local + remote.
+   */
+  async deleteChat(jid: string, scope: 'local' | 'remote' | 'both' = 'both') {
+    jid = this.contactCache.canonicalJid(jid)
+    if (scope === 'remote' || scope === 'both') {
+      if (!this.sock) throw new Error('Socket not connected')
+      const lastMessages = await this.lastMessagesForChat(jid)
+      await this.sock.chatModify({ delete: true, lastMessages }, jid)
+    }
+    if (scope === 'local' || scope === 'both') {
+      await this.messageStore.clearMediaStore(jid).catch(() => {})
+      await this.messageStore.removeMessageStore(jid)
+      this.messages.delete(jid)
+      await this.removeChatStore(jid)
+      this.events.emit('event', { type: 'chat-deleted', bot: this.authKey, jid })
+    }
+    return { ok: true, jid, scope }
+  }
+
+  /**
+   * Clear the content of every archived chat/group, locally and on the phone.
+   * `deleteChats` removes the archived chats entirely instead of just clearing
+   * their messages.
+   */
+  async clearArchivedChats(options: { scope?: 'local' | 'remote' | 'both'; deleteChats?: boolean } = {}) {
+    const scope = options.scope || 'both'
+    const archived = this.listChats().filter(chat => chat.isArchived)
+    const result: { jid: string; ok: boolean; error?: string }[] = []
+    for (const chat of archived) {
+      try {
+        if (options.deleteChats) await this.deleteChat(chat.jid, scope)
+        else await this.clearChat(chat.jid, scope)
+        result.push({ jid: chat.jid, ok: true })
+      } catch (err: any) {
+        result.push({ jid: chat.jid, ok: false, error: err?.message || String(err) })
+      }
+    }
+    return {
+      ok: true,
+      total: archived.length,
+      cleared: result.filter(item => item.ok).length,
+      failed: result.filter(item => !item.ok).length,
+      results: result
+    }
+  }
+
   async muteChat(jid: string, muted: boolean) {
     if (!this.sock) throw new Error('Socket not connected')
     jid = this.contactCache.canonicalJid(jid)
