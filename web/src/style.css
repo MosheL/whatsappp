@@ -3267,6 +3267,71 @@ button {
   font-size: 14px;
 }
 
+/* ---- Chat info popup: public share links ---- */
+.chat-info-share {
+  background: #f2f6f8;
+  border: 1px solid #e3e8ec;
+  border-radius: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+}
+.chat-info-share-head {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+.chat-info-share-head .chat-info-desc-label {
+  margin-bottom: 0;
+}
+.chat-info-share-create {
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.chat-info-share-hint {
+  color: #8696a0;
+  font-size: 11px;
+  line-height: 1.4;
+  margin: 6px 0 0;
+}
+.chat-info-share-link {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.chat-info-share-url {
+  background: #ffffff;
+  border: 1px solid #c8d1d8;
+  border-radius: 6px;
+  color: #1f2933;
+  flex: 1;
+  font-size: 11px;
+  min-width: 0;
+  outline: none;
+  padding: 6px 8px;
+}
+.chat-info-share-copy,
+.chat-info-share-revoke {
+  background: #0a2e26;
+  border: 0;
+  border-radius: 6px;
+  color: #ffffff;
+  cursor: pointer;
+  flex: none;
+  font-size: 12px;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+.chat-info-share-revoke {
+  background: transparent;
+  font-size: 14px;
+  padding: 6px 4px;
+}
+.chat-info-share-revoke:hover {
+  background: #fdecea;
+}
+
 /* ---- Add-member modal overlay ---- */
 .chat-info-modal-backdrop {
   align-items: center;

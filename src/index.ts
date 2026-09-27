@@ -1,7 +1,9 @@
 import { Bot, createBot } from './bot.ts'
 import type { BotStatus } from './types.ts'
+import { ShareStore } from './share-store.ts'
 import Busboy from 'busboy'
 import crypto from 'crypto'
+import { Redis } from 'ioredis'
 import fs from 'fs'
 import http from 'http'
 import path from 'path'
@@ -20,8 +22,62 @@ const sessionCookieName = 'wa_ui_session'
 const externalApiKey = process.env.WHATSAPP_EXTERNAL_API_KEY || ''
 const maxFailedLogins = Number(process.env.MAX_FAILED_LOGINS || 10)
 const loginBlockDurationMs = Number(process.env.LOGIN_BLOCK_DURATION_MS || 30 * 60 * 1000)
-const bots = new Map<string, Bot>()
+// Exported for API tests: tests run in API_TEST_MODE (no bots are created) and
+// inject fake bots / a stubbed share-store Redis client.
+export const bots = new Map<string, Bot>()
 const apiTestMode = process.env.API_TEST_MODE === 'true'
+// Public share tokens are anonymous read access to one group's recent messages.
+// They are independent of the UI session, so the read route is served before the
+// auth guard below.
+export const shareStore = new ShareStore(new Redis({
+  host: process.env.REDIS_HOST ?? '127.0.0.1',
+  port: Number(process.env.REDIS_PORT ?? 6379),
+  password: process.env.REDIS_PASS || undefined,
+  db: 6,
+  lazyConnect: true,
+  // Fail fast: sharing is a side feature and must never stall the HTTP server
+  // (or tests) when Redis is unreachable.
+  enableOfflineQueue: false,
+  maxRetriesPerRequest: 1,
+  connectTimeout: 3000,
+  retryStrategy: () => null
+}))
+const shareReadLimit = Number(process.env.WHATSAPP_SHARE_LIMIT || 300)
+
+// ioredis emits 'error' events that would otherwise crash the process when no
+// listener is attached. Log them once and move on.
+let shareRedisErrorLogged = false
+;(shareStore as any).redis.on('error', (err: Error) => {
+  if (shareRedisErrorLogged) return
+  shareRedisErrorLogged = true
+  console.error('Share store Redis error:', err.message)
+})
+
+// Never let the share Redis socket keep the process alive on its own (tests and
+// graceful shutdowns rely on the HTTP server being the only thing holding it).
+function unrefShareRedis() {
+  const stream = (shareStore as any).redis?.stream
+  if (stream && typeof stream.unref === 'function') stream.unref()
+}
+unrefShareRedis()
+
+// Only connect when a share route is actually used, so test runs and installs
+// without Redis reachable don't crash at import time.
+let shareRedisReady: Promise<void> | undefined
+function ensureShareRedis() {
+  const client = (shareStore as any).redis as Redis
+  if (client.status === 'ready') return Promise.resolve()
+  if (!shareRedisReady) {
+    shareRedisReady = client.connect()
+      .then(() => { unrefShareRedis() })
+      .catch(err => {
+        // Reset so a later request can retry after Redis comes back.
+        shareRedisReady = undefined
+        throw err
+      })
+  }
+  return shareRedisReady
+}
 
 // IP tracking for failed login attempts
 const loginAttempts = new Map<string, { count: number, blockedUntil: number }>()
@@ -347,6 +403,51 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
+  // -------- Public group share (no login) --------
+  // GET /api/share/<token>[?limit=300] returns the last N messages of the group
+  // the token points at. Intended for AI/automation consumers.
+  if (req.method === 'GET' && url.pathname.startsWith('/api/share/')) {
+    const token = decodeURIComponent(url.pathname.slice('/api/share/'.length))
+    if (!token) {
+      sendJson(res, 400, { error: 'Missing share token' })
+      return
+    }
+    try {
+      await ensureShareRedis()
+      const link = await shareStore.get(token)
+      if (!link) {
+        sendJson(res, 404, { error: 'Share link not found' })
+        return
+      }
+      const bot = bots.get(link.bot)
+      if (!bot) {
+        sendJson(res, 404, { error: 'Client not found' })
+        return
+      }
+      const requested = Number(url.searchParams.get('limit') || shareReadLimit)
+      const limit = Math.max(1, Math.min(Number.isFinite(requested) ? requested : shareReadLimit, shareReadLimit))
+      const jid = bot.contactCache.canonicalJid(link.jid)
+      const chat = bot.chats.get(jid)
+      const messages = await bot.getMessages(jid, limit)
+      sendJson(res, 200, {
+        token,
+        group: {
+          jid,
+          name: chat?.name || '',
+          participantCount: chat?.participantCount,
+          isGroup: true
+        },
+        label: link.label || null,
+        limit,
+        count: messages.length,
+        messages
+      })
+    } catch (err: any) {
+      sendJson(res, 503, { error: 'Share store unavailable' })
+    }
+    return
+  }
+
   if (url.pathname.startsWith('/api/') && !isAuthed(req)) {
     sendJson(res, 401, { error: 'נדרש להתחבר' })
     return
@@ -500,6 +601,62 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     try {
       const [participants, info] = await Promise.all([bot.groupParticipants(jid), bot.groupInfo(jid)])
       sendJson(res, 200, { participants, info })
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
+  // -------- Share link management (UI session required) --------
+  if (req.method === 'GET' && url.pathname === '/api/shares') {
+    const bot = bots.get(url.searchParams.get('bot') || '')
+    const jid = url.searchParams.get('jid') || ''
+    if (!bot || !jid) {
+      sendJson(res, 400, { error: 'חסר לקוח או נמען' })
+      return
+    }
+    try {
+      await ensureShareRedis()
+      const links = await shareStore.list(bot.botId, bot.contactCache.canonicalJid(jid))
+      sendJson(res, 200, { links })
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/shares') {
+    const parsed = await readBotJson(req, res)
+    if (!parsed) return
+    const { data, bot } = parsed
+    if (!data.jid) {
+      sendJson(res, 400, { error: 'חסר נמען' })
+      return
+    }
+    try {
+      await ensureShareRedis()
+      const link = await shareStore.create(
+        bot.botId,
+        bot.contactCache.canonicalJid(data.jid),
+        typeof data.label === 'string' ? data.label : ''
+      )
+      sendJson(res, 200, { link })
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
+  if (req.method === 'DELETE' && url.pathname.startsWith('/api/shares/')) {
+    const token = decodeURIComponent(url.pathname.slice('/api/shares/'.length))
+    if (!token) {
+      sendJson(res, 400, { error: 'חסר מזהה קישור' })
+      return
+    }
+    try {
+      await ensureShareRedis()
+      const removed = await shareStore.delete(token)
+      sendJson(res, removed ? 200 : 404, removed ? { ok: true } : { error: 'קישור לא נמצא' })
     } catch (err: any) {
       sendJson(res, 500, { error: err.message })
     }

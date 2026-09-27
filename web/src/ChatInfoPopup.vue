@@ -226,6 +226,75 @@ async function addContact(contact) {
   }
 }
 
+// -------- Share API links (group only) --------
+const shareLinks = ref([])
+const shareLoading = ref(false)
+const shareCreating = ref(false)
+const shareError = ref('')
+const copiedToken = ref('')
+
+function shareUrl(link) {
+  return `${window.location.origin}/api/share/${encodeURIComponent(link.token)}`
+}
+
+async function loadShareLinks() {
+  if (!isGroup.value || !props.chat?.jid) return
+  shareLoading.value = true
+  shareError.value = ''
+  try {
+    const params = new URLSearchParams({ bot: props.selectedBot, jid: props.chat.jid })
+    const data = await api(`/api/shares?${params}`)
+    shareLinks.value = data.links || []
+  } catch (err) {
+    shareError.value = err.message
+  } finally {
+    shareLoading.value = false
+  }
+}
+
+async function createShareLink() {
+  if (shareCreating.value || !props.chat?.jid) return
+  shareCreating.value = true
+  shareError.value = ''
+  try {
+    const data = await api('/api/shares', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bot: props.selectedBot, jid: props.chat.jid })
+    })
+    if (data.link) shareLinks.value = [data.link, ...shareLinks.value]
+  } catch (err) {
+    shareError.value = err.message
+  } finally {
+    shareCreating.value = false
+  }
+}
+
+async function revokeShareLink(link) {
+  if (!confirm('לבטל את קישור ה-API?')) return
+  shareError.value = ''
+  try {
+    await api(`/api/shares/${encodeURIComponent(link.token)}`, { method: 'DELETE' })
+    shareLinks.value = shareLinks.value.filter(item => item.token !== link.token)
+  } catch (err) {
+    shareError.value = err.message
+  }
+}
+
+async function copyShareUrl(link) {
+  const url = shareUrl(link)
+  try {
+    await navigator.clipboard.writeText(url)
+    copiedToken.value = link.token
+    setTimeout(() => {
+      if (copiedToken.value === link.token) copiedToken.value = ''
+    }, 1500)
+  } catch {
+    // Clipboard may be unavailable (http origins): fall back to a prompt.
+    window.prompt('העתק את הקישור', url)
+  }
+}
+
 function onLeaveGroup() {
   if (!confirm('לעזוב את הקבוצה?')) return
   emit('leave-group')
@@ -242,7 +311,12 @@ watch(() => props.chat, (chat) => {
   contactSearch.value = ''
   editingName.value = false
   editingDesc.value = false
-  if (isGroup.value) loadGroupInfo()
+  shareLinks.value = []
+  shareError.value = ''
+  if (isGroup.value) {
+    loadGroupInfo()
+    loadShareLinks()
+  }
 }, { immediate: true })
 </script>
 
@@ -326,6 +400,34 @@ watch(() => props.chat, (chat) => {
         </button>
       </div>
       <p v-if="actionError" class="chat-info-error">{{ actionError }}</p>
+
+      <!-- Share API link (read-only, no login) -->
+      <div v-if="isGroup" class="chat-info-share">
+        <div class="chat-info-share-head">
+          <span class="chat-info-desc-label">קישור API (קריאה ללא התחברות)</span>
+          <button
+            type="button"
+            class="chat-info-action-btn chat-info-share-create"
+            :disabled="shareCreating"
+            @click="createShareLink"
+          >{{ shareCreating ? 'יוצר…' : '➕ צור קישור' }}</button>
+        </div>
+        <p class="chat-info-share-hint">קישור ציבורי לקריאת 300 ההודעות האחרונות בקבוצה (JSON), לשימוש כלי AI.</p>
+        <p v-if="shareError" class="chat-info-error">{{ shareError }}</p>
+        <p v-else-if="shareLoading" class="chat-info-empty">טוען…</p>
+        <p v-else-if="!shareLinks.length" class="chat-info-empty">אין קישורים פעילים</p>
+        <div
+          v-for="link in shareLinks"
+          :key="link.token"
+          class="chat-info-share-link"
+        >
+          <input class="chat-info-share-url" dir="ltr" readonly :value="shareUrl(link)" @focus="$event.target.select()" />
+          <button type="button" class="chat-info-share-copy" @click="copyShareUrl(link)">
+            {{ copiedToken === link.token ? '✓ הועתק' : 'העתק' }}
+          </button>
+          <button type="button" class="chat-info-share-revoke" title="בטל קישור" @click="revokeShareLink(link)">🗑️</button>
+        </div>
+      </div>
 
       <template v-if="isGroup">
         <div class="chat-info-section-title">

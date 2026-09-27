@@ -152,6 +152,7 @@ docker compose up    # Server + Redis + UI
 | `UI_RESUME_REFRESH_DELAY_MS` | `3s` | Delay before refreshing after reconnect (allows history sync/read receipts to settle) |
 | `SYNC_FULL_HISTORY` | `true` | Request full history on connect |
 | `WA_QUERY_TIMEOUT_MS` | `180s` | Query timeout |
+| `WHATSAPP_SHARE_LIMIT` | `300` | Max (and default) message count for public share links |
 
 ## API endpoints
 | Method | Path | Description |
@@ -165,6 +166,10 @@ docker compose up    # Server + Redis + UI
 | POST | `/api/react-message` | Add/remove reaction |
 | POST | `/api/send-file` | Send file/image |
 | GET | `/api/media` | Download media by JID + message ID |
+| GET | `/api/share/&#8203;<token>` | **Public** (no login): last N messages of a shared group (JSON) |
+| GET | `/api/shares?bot=&jid=` | List share links for a group (UI session) |
+| POST | `/api/shares` | Create a share link `{ bot, jid, label? }` (UI session) |
+| DELETE | `/api/shares/<token>` | Revoke a share link (UI session) |
 
 UI authentication uses an HttpOnly `SameSite=Strict` cookie. Media, avatar, API,
 and WebSocket requests receive it automatically; session tokens are not stored in
@@ -177,6 +182,33 @@ curl -X POST http://localhost:3000/send \
   -H "X-API-Key: $WHATSAPP_EXTERNAL_API_KEY" \
   -d '{"bot":"bot1","jid":"972501234567@s.whatsapp.net","text":"hello"}'
 ```
+
+### Public group share (for AI / automation)
+
+Create a link from the UI: open a group → פרטי שיחה → "קישור API" → **צור קישור**.
+The generated URL is readable **without login** and returns the group's last 300
+messages as JSON (tune with `?limit=1..300`, cap via `WHATSAPP_SHARE_LIMIT`):
+
+```bash
+curl http://localhost:3000/api/share/<token>?limit=300
+```
+
+```json
+{
+  "token": "…",
+  "group": { "jid": "123@g.us", "name": "…", "participantCount": 12, "isGroup": true },
+  "limit": 300,
+  "count": 2,
+  "messages": [ { "id": "…", "sender": "…", "text": "…", "timestamp": 1700000000, "…": "…" } ]
+}
+```
+
+Notes:
+- Tokens are unguessable random strings stored in Redis (`ui:share:*`); anyone
+  holding the URL can read the group, so treat it like a secret. Revoke from the
+  same UI section (🗑️) or `DELETE /api/shares/<token>`.
+- Messages are the same public payloads the UI receives (no raw wire data).
+- `WHATSAPP_SHARE_LIMIT` (default 300) caps both the default and max `limit`.
 
 ## Module dependencies
 ```
