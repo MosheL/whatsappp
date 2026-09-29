@@ -560,12 +560,26 @@ export class Bot {
     if (shouldIgnoreUiJid(jid)) return { marked: 0 }
     const stored = await this.messageStore.getStoredMessages(jid, 200)
     const memory = this.messages.get(jid) || []
-    const keys = [...stored, ...memory]
+    const all = [...stored, ...memory]
+    const keys = all
       .filter(message => !message.fromMe && message.key?.id)
       .map(message => ({ ...message.key, remoteJid: jid }))
     if (keys.length) await this.sock.readMessages(keys)
+    // Persist the read state on the stored incoming messages themselves, exactly
+    // like device-originated reads do (messages.update). Without this,
+    // recalculateUnreadCounts() (runs after every resume) counts those messages
+    // as unread again and resurrects the badge in every open browser.
+    const seen = new Set<string>()
+    let read = 0
+    for (const message of all) {
+      if (message.fromMe || !message.id || seen.has(message.id)) continue
+      seen.add(message.id)
+      if (messageStatusRank(message.status) >= 4) continue
+      this.updateStoredMessage(jid, message.id, { status: 4 })
+      read++
+    }
     this.setChatUnread(jid, 0)
-    return { marked: keys.length, remote: true }
+    return { marked: keys.length, read, remote: true }
   }
 
   async markLocalRead(jid: string) {
@@ -1789,6 +1803,31 @@ export class Bot {
   }
 
   /**
+   * Clears the unread badge for chats whose incoming messages were marked read
+   * by another device of this account (e.g. the phone). Baileys reports those
+   * reads in messages.update as status bumps on the incoming (fromMe=false)
+   * messages — message-receipt.update only fires for groups/status broadcast.
+   * Without this, reading a 1:1 chat on the phone never clears the badge here
+   * and in every open browser until a resume recalculation happens to fix it.
+   */
+  clearUnreadForDeviceReads(items: { key?: WAMessageKey, update?: { status?: proto.WebMessageInfo.Status } }[]) {
+    const readJids = new Set<string>()
+    for (const item of items) {
+      if (item.key?.fromMe) continue
+      if (messageStatusRank(item.update?.status) < 4) continue
+      const jid = this.contactCache.keyRemoteJid(item.key)
+      if (!jid || shouldIgnoreUiJid(jid)) continue
+      readJids.add(jid)
+    }
+    for (const jid of readJids) {
+      const chat = this.chats.get(jid)
+      // Only broadcast when there is something to clear, so receipt echoes for
+      // already-read chats do not spam every browser with chat events.
+      if (chat && Number(chat.unread || 0) > 0) this.setChatUnread(jid, 0)
+    }
+  }
+
+  /**
    * Recalculates unread counts for all chats by counting stored messages that
    * are not from-me and have not been read (status rank < 4).
    * This corrects stale counts after a disconnect where read receipts from the
@@ -2034,6 +2073,11 @@ export class Bot {
         }
         this.updateStoredMessage(jid, item.key.id, patch)
       }
+      // 1:1 read receipts — including reads made on the phone — arrive here as
+      // status bumps on the incoming messages (Baileys only emits
+      // message-receipt.update for groups/status broadcast). Clear the unread
+      // badge so reads made on another device sync to every browser.
+      this.clearUnreadForDeviceReads(items)
     })
 
     sock.ev.on('message-receipt.update', items => {

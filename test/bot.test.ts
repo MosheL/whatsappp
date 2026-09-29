@@ -1133,3 +1133,58 @@ test('sendButtonReply skips quoting when the quoted message has no raw', async (
 function templateSentTemplateContent(sent: any) {
   return sent.content?.type === 'template' && typeof sent.content?.buttonReply?.id === 'string'
 }
+
+test('markRead persists read status on stored incoming messages so unread cannot resurrect', async () => {
+  const patched: { jid: string, id: string, patch: any }[] = []
+  const unreadCalls: { jid: string, unread: number }[] = []
+  const readKeys: any[] = []
+  const unreadIncoming = { id: 'in-1', fromMe: false, status: 2, key: { id: 'in-1', remoteJid: 'chat@s.whatsapp.net', fromMe: false } }
+  const alreadyRead = { id: 'in-2', fromMe: false, status: 4, key: { id: 'in-2', remoteJid: 'chat@s.whatsapp.net', fromMe: false } }
+  const own = { id: 'out-1', fromMe: true, status: 3, key: { id: 'out-1', remoteJid: 'chat@s.whatsapp.net', fromMe: true } }
+  const fakeBot: any = {
+    sock: { readMessages: async (keys: any[]) => { readKeys.push(...keys) } },
+    contactCache: { canonicalJid: (jid: string) => jid },
+    messageStore: { getStoredMessages: async () => [unreadIncoming, alreadyRead, own] },
+    messages: new Map(),
+    updateStoredMessage: (jid: string, id: string, patch: any) => patched.push({ jid, id, patch }),
+    setChatUnread: (jid: string, unread: number) => unreadCalls.push({ jid, unread })
+  }
+
+  const result = await Bot.prototype.markRead.call(fakeBot, 'chat@s.whatsapp.net')
+
+  // Read receipts are still sent to WhatsApp for every incoming message.
+  assert.deepEqual(readKeys.map(key => key.id), ['in-1', 'in-2'])
+  // Only the not-yet-read incoming messages get their status persisted as read.
+  assert.deepEqual(patched, [{ jid: 'chat@s.whatsapp.net', id: 'in-1', patch: { status: 4 } }])
+  assert.deepEqual(unreadCalls, [{ jid: 'chat@s.whatsapp.net', unread: 0 }])
+  assert.equal(result.remote, true)
+})
+
+test('device read receipts (messages.update on incoming messages) clear the chat unread badge', () => {
+  const cleared: { jid: string, unread: number }[] = []
+  const chats = new Map([
+    ['chat@s.whatsapp.net', { jid: 'chat@s.whatsapp.net', unread: 3 }],
+    ['group@g.us', { jid: 'group@g.us', unread: 0 }],
+    ['status@broadcast', { jid: 'status@broadcast', unread: 2 }]
+  ])
+  const fakeBot: any = {
+    chats,
+    contactCache: { keyRemoteJid: (key: any) => key.remoteJid },
+    setChatUnread: (jid: string, unread: number) => cleared.push({ jid, unread })
+  }
+
+  // Baileys reports phone-originated reads of 1:1 chats as messages.update
+  // status bumps on the incoming (fromMe=false) messages — READ and PLAYED.
+  Bot.prototype.clearUnreadForDeviceReads.call(fakeBot, [
+    { key: { remoteJid: 'chat@s.whatsapp.net', id: 'm1', fromMe: false }, update: { status: 4 } },
+    { key: { remoteJid: 'chat@s.whatsapp.net', id: 'm2', fromMe: false }, update: { status: 5 } },
+    // Contact read of my own outgoing message: must not touch the unread badge.
+    { key: { remoteJid: 'chat@s.whatsapp.net', id: 'm3', fromMe: true }, update: { status: 4 } },
+    // Delivery receipt only: not a read.
+    { key: { remoteJid: 'chat@s.whatsapp.net', id: 'm4', fromMe: false }, update: { status: 3 } },
+    // Already-cleared chat: no extra broadcast.
+    { key: { remoteJid: 'group@g.us', id: 'm5', fromMe: false }, update: { status: 4 } }
+  ])
+
+  assert.deepEqual(cleared, [{ jid: 'chat@s.whatsapp.net', unread: 0 }])
+})
