@@ -1430,7 +1430,7 @@ export class Bot {
       console.log('📥 recordUiMessage callback:', 'found currentMessage:', Boolean(currentMessage), 'messageData.status:', messageData.status, 'chat.lastMessageStatus before:', chat.lastMessageStatus)
       if (displayable && isLatestKnown) {
         chat.lastMessageId = messageData.id
-        chat.lastMessage = messageData.text || (messageData.viewOnce ? viewOnceLabel(messageData.viewOnceType) : messageData.contact ? (messageData.contact.contacts?.length ? 'אנשי קשר' : 'איש קשר') : messageData.media?.kind === 'image' ? 'תמונה' : messageData.media?.kind === 'video' ? 'וידאו' : messageData.media?.kind === 'document' ? 'קובץ' : messageData.interactiveData ? interactivePreviewLabel(messageData.interactiveData) : messageData.location ? (messageData.location.name || 'מיקום') : isSupportedMessageType(messageData.type) ? messageData.type : 'הודעה לא נתמכת')
+        chat.lastMessage = messageData.text || (messageData.viewOnce ? viewOnceLabel(messageData.viewOnceType) : messageData.contact ? (messageData.contact.contacts?.length ? 'אנשי קשר' : 'איש קשר') : messageData.media?.kind === 'image' ? 'תמונה' : messageData.media?.kind === 'video' ? 'וידאו' : messageData.media?.kind === 'document' ? 'קובץ' : messageData.otp ? `קוד אימות: ${messageData.otp.code}` : messageData.interactiveData ? interactivePreviewLabel(messageData.interactiveData) : messageData.location ? (messageData.location.name || 'מיקום') : isSupportedMessageType(messageData.type) ? messageData.type : 'הודעה לא נתמכת')
         chat.lastMessageFromMe = messageData.fromMe
         // Only overwrite status/receipt if the incoming data has meaningful values.
         // Incoming messages often have undefined status, which would erase the
@@ -1563,8 +1563,12 @@ export class Bot {
         displayText = displayText.replace(mentionPattern, (_match, prefix) => `${prefix}${replacement}`)
       }
     }
+    const interactiveData = messageInteractiveData(msg.message)
+    const otp = messageOtpData(msg.message)
+    // Never drop interactive/OTP payloads (auth templates may have no body text
+    // at all — the code lives in the native-flow buttons).
     if (!displayText && type === 'unknown' && !contact) return
-    if (!displayText && !media && !contact && isTransportMessage(type)) return
+    if (!displayText && !media && !contact && !interactiveData && !otp && isTransportMessage(type)) return
 
     this.recordUiMessage({
       id: msg.key.id || `${Date.now()}`,
@@ -1583,9 +1587,9 @@ export class Bot {
       senderNumber: isJidGroup(jid) ? this.contactCache.participantPhone(msg) : '',
       text: displayText,
       type,
-      interactiveData: messageInteractiveData(msg.message),
+      interactiveData,
       location,
-      otp: messageOtpData(msg.message),
+      otp,
       status: msg.status,
       timestamp: normalizeTimestamp(msg.messageTimestamp)
     }, options)

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { isForwardedMessage, isSupportedMessageType, messageLinkPreview, messageOtpData, messagePatchFromContent, messageText, messageType, messageInteractiveData, messageLocation, quotedFromIncomingMessage, unwrapMessageForMedia } from '../src/message-processor.ts'
+import { isForwardedMessage, isSupportedMessageType, isTransportMessage, messageLinkPreview, messageOtpData, messagePatchFromContent, messageText, messageType, messageInteractiveData, messageLocation, quotedFromIncomingMessage, unwrapMessageForMedia } from '../src/message-processor.ts'
 
 // -------- OTP (authentication template) messages --------
 
@@ -68,6 +68,43 @@ test('regular messages are never detected as OTP', () => {
   assert.equal(messageOtpData({
     interactiveMessage: { body: { text: 'הזמנה 987654 אושרה' } }
   } as any), undefined)
+})
+
+test('textless auth-template OTP messages are kept and typed as interactive (not transport)', () => {
+  // Real wire shape: messageContextInfo precedes the interactive payload and
+  // the template carries no body text — only the code in the buttons.
+  const content: any = {
+    messageContextInfo: { deviceListMetadata: { recipientKeyHash: 'abc==' } },
+    interactiveMessage: {
+      nativeFlowMessage: {
+        buttons: [
+          { name: 'otp_select', buttonParamsJson: JSON.stringify({ otp_type: 'SMS', visual_type: 'notification' }) },
+          { name: 'copy_code', buttonParamsJson: JSON.stringify({ copy_code: '123456', id: 'x' }) }
+        ]
+      }
+    }
+  }
+
+  // The type must not fall back to messageContextInfo (a transport type) —
+  // that made recordBaileysMessage drop the whole message.
+  assert.equal(messageType(content), 'interactiveMessage')
+  assert.equal(isTransportMessage(messageType(content)), false)
+
+  const data = messageInteractiveData(content)
+  assert.equal(data?.type, 'interactive')
+  assert.equal(data?.buttons?.length, 2)
+
+  const otp = messageOtpData(content)
+  assert.equal(otp?.code, '123456')
+  assert.equal(otp?.otpType, 'SMS')
+
+  const patch = messagePatchFromContent(content)
+  assert.equal(patch.otp?.code, '123456')
+})
+
+test('messageType skips transport wrappers for regular content too', () => {
+  assert.equal(messageType({ messageContextInfo: {}, imageMessage: { mimetype: 'image/jpeg' } } as any), 'imageMessage')
+  assert.equal(messageType({ messageContextInfo: {} } as any), 'messageContextInfo')
 })
 
 

@@ -144,7 +144,12 @@ export function messageType(message: WAMessageContent | null | undefined): strin
   ]
   const preferred = preferredTypes.find(type => content[type])
   if (preferred) return preferred
-  return Object.keys(content)[0] || 'unknown'
+  // Metadata/transport wrappers (messageContextInfo, senderKeyDistributionMessage,
+  // …) often precede the real content on the wire. Picking them as the type made
+  // e.g. interactive/OTP messages look like transport traffic and get dropped —
+  // so skip them when choosing the fallback type.
+  const real = Object.keys(content).find(key => !isTransportMessage(key))
+  return real || Object.keys(content)[0] || 'unknown'
 }
 
 // -------- Media --------
@@ -529,20 +534,33 @@ export function messageOtpData(message: WAMessageContent | null | undefined): Ot
     if (name === 'otp_select') {
       otpType = String(params.otp_type || '') || otpType
     }
-    code = String(params.copy_code || params.code || params.copied_code || '').trim() || code
+    code = String(params.copy_code || params.code || params.otp_code || params.copied_code || '').trim() || code
   }
 
-  const bodyText = String(im.body?.text || im.header?.title || '')
+  const bodyText = String(im.body?.text || im.header?.title || im.footer?.text || '')
   if (!code && bodyText) {
     // The code is typically wrapped in bold markers: "*123-456* הוא קוד האימות".
     const bold = bodyText.match(/\*\s*(\d{3}(?:[ \-]\d{3,4})?|\d{4,8})\s*\*/)
     if (bold) code = bold[1].trim()
   }
-  if (!code && (otpType || hasOtpButton) && bodyText) {
-    // Autofill-only template: fall back to a standalone 3-4+3 or 4-8 digit
-    // number in the body text.
-    const bare = bodyText.match(/(?<![\d\-])(\d{3}[ \-]\d{3}|\d{4,8})(?![\d\-])/)
-    if (bare) code = bare[1].trim()
+  if (!code && (otpType || hasOtpButton)) {
+    // Autofill-only template: the code may be echoed anywhere in the template
+    // (body, footer or a button's display text). Look for a standalone
+    // 3-4+3 or 6-8 digit number — excludes years/counts (4-5 digits).
+    const sources = [
+      bodyText,
+      ...buttons.map(b => {
+        const params = buttonParams(b)
+        return String(params.display_text || params.title || params.text || '')
+      })
+    ]
+    for (const source of sources) {
+      const bare = source.match(/(?<![\d\-])(\d{3}[ \-]\d{3}|\d{6,8})(?![\d\-])/)
+      if (bare) {
+        code = bare[1].trim()
+        break
+      }
+    }
   }
 
   if (!code) return undefined

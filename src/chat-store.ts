@@ -102,7 +102,7 @@ export class ChatStore {
     if (!chat || !message) return
     const label = message.deleted
       ? 'הודעה נמחקה'
-      : message.text || (message.viewOnce ? '' : message.contact ? (message.contact.contacts?.length ? 'אנשי קשר' : 'איש קשר') : message.media?.kind === 'image' ? 'תמונה' : message.media?.kind === 'video' ? 'וידאו' : message.media?.kind === 'document' ? 'קובץ' : message.interactiveData ? interactivePreviewLabel(message.interactiveData) : message.location ? (message.location.name || 'מיקום') : isSupportedMessageType(message.type) ? message.type : 'הודעה לא נתמכת')
+      : message.text || (message.viewOnce ? '' : message.contact ? (message.contact.contacts?.length ? 'אנשי קשר' : 'איש קשר') : message.media?.kind === 'image' ? 'תמונה' : message.media?.kind === 'video' ? 'וידאו' : message.media?.kind === 'document' ? 'קובץ' : message.otp ? `קוד אימות: ${message.otp.code}` : message.interactiveData ? interactivePreviewLabel(message.interactiveData) : message.location ? (message.location.name || 'מיקום') : isSupportedMessageType(message.type) ? message.type : 'הודעה לא נתמכת')
     const displayable = Boolean(message.text || message.media || message.contact || message.interactiveData || message.call || message.linkPreview || message.location || message.otp)
     // Text and media labels are not unique. Only the preview's message ID
     // identifies a receipt or edit for the current last message reliably.
