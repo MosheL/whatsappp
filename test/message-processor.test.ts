@@ -1,6 +1,75 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { isForwardedMessage, isSupportedMessageType, messageLinkPreview, messagePatchFromContent, messageText, messageType, messageInteractiveData, messageLocation, quotedFromIncomingMessage, unwrapMessageForMedia } from '../src/message-processor.ts'
+import { isForwardedMessage, isSupportedMessageType, messageLinkPreview, messageOtpData, messagePatchFromContent, messageText, messageType, messageInteractiveData, messageLocation, quotedFromIncomingMessage, unwrapMessageForMedia } from '../src/message-processor.ts'
+
+// -------- OTP (authentication template) messages --------
+
+test('extracts OTP code from auth-template copy_code and otp_select buttons', () => {
+  const content: any = {
+    interactiveMessage: {
+      body: { text: '*123-456* הוא קוד האימות שלך.' },
+      nativeFlowMessage: {
+        buttons: [
+          { name: 'otp_select', buttonParamsJson: JSON.stringify({ otp_type: 'SMS', visual_type: 'notification', text: 'קבלת קוד אוטומטית' }) },
+          { name: 'copy_code', buttonParamsJson: JSON.stringify({ copy_code: '123-456', id: 'otp1' }) }
+        ]
+      }
+    }
+  }
+
+  const otp = messageOtpData(content)
+  assert.equal(otp?.code, '123-456')
+  assert.equal(otp?.otpType, 'SMS')
+
+  // Interactive rendering: copy button works and the autofill button is passive
+  const data = messageInteractiveData(content)
+  const [otpBtn, copyBtn] = data?.buttons || []
+  assert.equal(otpBtn?.type, 'otp')
+  assert.equal(otpBtn?.text, 'קבלת קוד אוטומטית')
+  assert.equal(copyBtn?.type, 'copy_code')
+  assert.equal(copyBtn?.code, '123-456')
+
+  const patch = messagePatchFromContent(content)
+  assert.equal(patch.otp?.code, '123-456')
+})
+
+test('extracts OTP code from bold-wrapped body text when buttons carry no code', () => {
+  const content: any = {
+    interactiveMessage: {
+      body: { text: '*654321* הוא קוד האימות שלך.' },
+      nativeFlowMessage: {
+        buttons: [
+          { name: 'otp_select', buttonParamsJson: JSON.stringify({ otp_type: 'ONE_TAP' }) }
+        ]
+      }
+    }
+  }
+  assert.equal(messageOtpData(content)?.code, '654321')
+})
+
+test('falls back to a bare number in the body of an autofill-only OTP template', () => {
+  const content: any = {
+    interactiveMessage: {
+      body: { text: 'הקוד שלך הוא 987654 והוא תקף ל-10 דקות' },
+      nativeFlowMessage: {
+        buttons: [
+          { name: 'otp_select', buttonParamsJson: JSON.stringify({ otp_type: 'SMS' }) }
+        ]
+      }
+    }
+  }
+  assert.equal(messageOtpData(content)?.code, '987654')
+})
+
+test('regular messages are never detected as OTP', () => {
+  // No interactive wrapper
+  assert.equal(messageOtpData({ conversation: 'הקוד שלך הוא 987654' } as any), undefined)
+  // Interactive message without OTP buttons and without a bold-wrapped number
+  assert.equal(messageOtpData({
+    interactiveMessage: { body: { text: 'הזמנה 987654 אושרה' } }
+  } as any), undefined)
+})
+
 
 test('detects and preserves forwarded message metadata', () => {
   const content: any = {

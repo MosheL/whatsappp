@@ -3,7 +3,7 @@ import type { proto } from '@whiskeysockets/baileys'
 import { isJidGroup } from '@whiskeysockets/baileys'
 import type { Chat } from '@whiskeysockets/baileys/lib/Types/Chat.js'
 import { shouldIgnoreUiJid, looksLikeJid } from './contact-cache.ts'
-import { callTypeLabel, interactivePreviewLabel } from './message-processor.ts'
+import { callTypeLabel, interactivePreviewLabel, isSupportedMessageType } from './message-processor.ts'
 import { messageStatusRank, mergeMessagePatch, reactionUserKey } from './message-utils.ts'
 
 export class ChatStore {
@@ -102,8 +102,8 @@ export class ChatStore {
     if (!chat || !message) return
     const label = message.deleted
       ? 'הודעה נמחקה'
-      : message.text || (message.viewOnce ? '' : message.contact ? (message.contact.contacts?.length ? 'אנשי קשר' : 'איש קשר') : message.media?.kind === 'image' ? 'תמונה' : message.media?.kind === 'video' ? 'וידאו' : message.media?.kind === 'document' ? 'קובץ' : message.interactiveData ? interactivePreviewLabel(message.interactiveData) : message.location ? (message.location.name || 'מיקום') : message.type)
-    const displayable = Boolean(message.text || message.media || message.contact || message.interactiveData || message.call || message.linkPreview || message.location)
+      : message.text || (message.viewOnce ? '' : message.contact ? (message.contact.contacts?.length ? 'אנשי קשר' : 'איש קשר') : message.media?.kind === 'image' ? 'תמונה' : message.media?.kind === 'video' ? 'וידאו' : message.media?.kind === 'document' ? 'קובץ' : message.interactiveData ? interactivePreviewLabel(message.interactiveData) : message.location ? (message.location.name || 'מיקום') : isSupportedMessageType(message.type) ? message.type : 'הודעה לא נתמכת')
+    const displayable = Boolean(message.text || message.media || message.contact || message.interactiveData || message.call || message.linkPreview || message.location || message.otp)
     // Text and media labels are not unique. Only the preview's message ID
     // identifies a receipt or edit for the current last message reliably.
     const isCurrentLast = Boolean(chat.lastMessageId && chat.lastMessageId === message.id)

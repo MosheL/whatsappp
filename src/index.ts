@@ -607,6 +607,23 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
+  // Public join link for a group. Fails when the bot is not a group admin —
+  // the UI treats any error as "link not available" and hides the section.
+  if (req.method === 'GET' && url.pathname === '/api/group-invite') {
+    const bot = bots.get(url.searchParams.get('bot') || '')
+    const jid = url.searchParams.get('jid') || ''
+    if (!bot || !jid) {
+      sendJson(res, 400, { error: 'חסר לקוח או נמען' })
+      return
+    }
+    try {
+      sendJson(res, 200, { link: await bot.groupInviteLink(jid) })
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
   // -------- Share link management (UI session required) --------
   if (req.method === 'GET' && url.pathname === '/api/shares') {
     const bot = bots.get(url.searchParams.get('bot') || '')

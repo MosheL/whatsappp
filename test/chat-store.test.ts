@@ -321,3 +321,44 @@ test('a read receipt updates the last-message preview even when the chat timesta
   })
   assert.equal(chat?.lastMessage, 'edited hello', 'edits to the identified preview bypass timestamp tolerance')
 })
+
+test('unsupported message types show the notice in the preview, not the raw type', () => {
+  const jid = '972501234567@s.whatsapp.net'
+  const chats = new Map([[jid, {
+    jid,
+    displayJid: jid,
+    phoneNumber: '',
+    name: 'Driver',
+    lastMessage: 'old',
+    lastMessageId: 'event1',
+    timestamp: 100,
+    unread: 0,
+    avatarUrl: '',
+    isGroup: false
+  }]])
+
+  makeStore(chats).updateChatFromEditedMessage(jid, {
+    id: 'event1',
+    jid,
+    key: { id: 'event1', remoteJid: jid },
+    fromMe: false,
+    sender: 'them',
+    text: '',
+    type: 'eventMessage',
+    timestamp: 200
+  })
+  assert.equal(chats.get(jid)?.lastMessage, 'הודעה לא נתמכת')
+
+  // Known types without dedicated renderers keep their type label
+  makeStore(chats).updateChatFromEditedMessage(jid, {
+    id: 'event1',
+    jid,
+    key: { id: 'event1', remoteJid: jid },
+    fromMe: false,
+    sender: 'them',
+    text: '',
+    type: 'locationMessage',
+    timestamp: 300
+  })
+  assert.equal(chats.get(jid)?.lastMessage, 'locationMessage')
+})

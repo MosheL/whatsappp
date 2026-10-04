@@ -108,6 +108,17 @@ export type LocationData = {
   comment?: string
 }
 
+/**
+ * One-time-password data extracted from WhatsApp Business API authentication
+ * templates ("your verification code is 123-456" messages sent via the API).
+ */
+export type OtpData = {
+  /** The one-time password itself, e.g. '123-456' */
+  code: string
+  /** Auth-template delivery type from the wire: 'SMS' | 'ONE_TAP' | 'COPY_CODE' | ... */
+  otpType?: string
+}
+
 export type UiMessage = {
   id: string
   jid: string
@@ -128,6 +139,7 @@ export type UiMessage = {
   linkPreview?: LinkPreviewData
   interactiveData?: InteractiveData
   location?: LocationData
+  otp?: OtpData
   viewOnce?: boolean
   viewOnceType?: string
   forwarded?: boolean
@@ -188,6 +200,8 @@ export type MessagePatch = Partial<{
   media: MediaData
   linkPreview: LinkPreviewData
   interactiveData: InteractiveData
+  location: LocationData
+  otp: OtpData
   viewOnce: boolean
   viewOnceType: string
   forwarded: boolean

@@ -226,6 +226,17 @@ const fullTime = computed(() => formatDateFull(props.message.timestamp))
           <span class="unsupported-text">מיקום</span>
         </div>
         <div v-else-if="!message.deleted && isInteractiveMessage(message) && message.interactiveData" class="interactive-message">
+          <!-- OTP (authentication template): prominent copyable code -->
+          <button
+            v-if="message.otp?.code"
+            type="button"
+            class="otp-code"
+            :title="`העתק: ${message.otp.code}`"
+            @click.stop="copyInteractiveCode(message.otp.code)"
+          >
+            <span class="otp-code-label">קוד אימות</span>
+            <strong class="otp-code-value" dir="ltr">{{ message.otp.code }}</strong>
+          </button>
           <div v-if="message.interactiveData.title" class="interactive-title" dir="auto">{{ message.interactiveData.title }}</div>
           <div v-if="message.interactiveData.body" class="interactive-body" dir="auto">
             <template v-for="(part, index) in formattedBody" :key="`${message.id}:ibody:${index}`">

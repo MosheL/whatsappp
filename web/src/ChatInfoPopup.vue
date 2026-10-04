@@ -300,6 +300,45 @@ function onLeaveGroup() {
   emit('leave-group')
 }
 
+// -------- Group invite (join) link --------
+// Available only when the bot is a group admin; any error is treated as
+// "link not available" and the section stays hidden.
+const inviteLink = ref('')
+const inviteLoading = ref(false)
+const copiedInvite = ref('')
+
+async function loadInviteLink() {
+  if (!isGroup.value || !props.chat?.jid) return
+  inviteLoading.value = true
+  try {
+    const params = new URLSearchParams({ bot: props.selectedBot, jid: props.chat.jid })
+    const data = await api(`/api/group-invite?${params}`)
+    inviteLink.value = data.link || ''
+  } catch {
+    inviteLink.value = ''
+  } finally {
+    inviteLoading.value = false
+  }
+}
+
+async function copyInviteUrl() {
+  if (!inviteLink.value) return
+  try {
+    await navigator.clipboard.writeText(inviteLink.value)
+    copiedInvite.value = inviteLink.value
+    setTimeout(() => {
+      if (copiedInvite.value === inviteLink.value) copiedInvite.value = ''
+    }, 1500)
+  } catch {
+    // Clipboard may be unavailable (http origins): fall back to a prompt.
+    window.prompt('העתק את קישור ההצטרפות', inviteLink.value)
+  }
+}
+
+function openInviteLink() {
+  if (inviteLink.value) window.open(inviteLink.value, '_blank', 'noopener')
+}
+
 watch(() => props.chat, (chat) => {
   isGroup.value = Boolean(chat?.isGroup)
   subject.value = chat?.name || ''
@@ -313,9 +352,12 @@ watch(() => props.chat, (chat) => {
   editingDesc.value = false
   shareLinks.value = []
   shareError.value = ''
+  inviteLink.value = ''
+  copiedInvite.value = ''
   if (isGroup.value) {
     loadGroupInfo()
     loadShareLinks()
+    loadInviteLink()
   }
 }, { immediate: true })
 </script>
@@ -390,6 +432,25 @@ watch(() => props.chat, (chat) => {
         <div v-if="editingDesc" class="chat-info-desc-actions">
           <button type="button" class="chat-info-action-btn" :disabled="savingEdit" @click="saveGroupUpdate">{{ savingEdit ? 'שומר…' : '✓ שמור' }}</button>
           <button type="button" class="chat-info-cancel-btn" :disabled="savingEdit" @click="cancelEditDesc">ביטול</button>
+        </div>
+      </div>
+
+      <!-- Group invite (join) link, when the bot can read it -->
+      <div v-if="isGroup && inviteLink" class="chat-info-invite">
+        <div class="chat-info-share-head">
+          <span class="chat-info-desc-label">קישור הצטרפות לקבוצה</span>
+          <button
+            type="button"
+            class="chat-info-edit-pencil"
+            title="פתח את הקישור בטאב חדש"
+            @click="openInviteLink"
+          >↗</button>
+        </div>
+        <div class="chat-info-share-link">
+          <input class="chat-info-share-url" dir="ltr" readonly :value="inviteLink" @focus="$event.target.select()" />
+          <button type="button" class="chat-info-share-copy" @click="copyInviteUrl">
+            {{ copiedInvite ? '✓ הועתק' : 'העתק' }}
+          </button>
         </div>
       </div>
 

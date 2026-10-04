@@ -1166,6 +1166,36 @@ button {
   margin-bottom: 2px;
 }
 
+/* OTP (authentication template) code chip */
+.otp-code {
+  align-items: center;
+  background: #eef4f2;
+  border: 1px dashed #145c50;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 6px 10px;
+  width: 100%;
+}
+
+.otp-code:hover {
+  background: #dce6e0;
+}
+
+.otp-code-label {
+  color: #667781;
+  font-size: 11px;
+}
+
+.otp-code-value {
+  color: #145c50;
+  font-size: 18px;
+  letter-spacing: 2px;
+  white-space: nowrap;
+}
+
 .interactive-body {
   color: #1f2933;
   font-size: 13px;
@@ -3265,6 +3295,15 @@ button {
   width: 100%;
   padding: 10px 12px;
   font-size: 14px;
+}
+
+/* ---- Chat info popup: group invite (join) link ---- */
+.chat-info-invite {
+  background: #f2f6f8;
+  border: 1px solid #e3e8ec;
+  border-radius: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
 }
 
 /* ---- Chat info popup: public share links ---- */

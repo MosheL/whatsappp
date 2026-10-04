@@ -53,6 +53,7 @@ import {
   isTransportMessage,
   isSupportedMessageType,
   messageInteractiveData,
+  messageOtpData,
   phoneFromVcard
 } from './message-processor.ts'
 import { MessageStore } from './message-store.ts'
@@ -1020,6 +1021,20 @@ export class Bot {
     }
   }
 
+  /**
+   * Public join link for a group (https://chat.whatsapp.com/<code>). Returns ''
+   * when the group has no invite code; throws when the bot lacks permission
+   * (only group admins can read the invite code) — callers treat both as
+   * "link not available".
+   */
+  async groupInviteLink(jid: string): Promise<string> {
+    if (!this.sock) throw new Error('Socket not connected')
+    jid = this.contactCache.resolveOutgoingJid(jid)
+    if (!isJidGroup(jid)) throw new Error('Not a group')
+    const code = await this.sock.groupInviteCode(jid)
+    return code ? `https://chat.whatsapp.com/${code}` : ''
+  }
+
   async sendText(jid: string, text: string, quotedId = '', quotedJid = '', mentions: string[] = []) {
     if (!this.sock) throw new Error('Socket not connected')
     jid = this.contactCache.resolveOutgoingJid(jid)
@@ -1386,7 +1401,7 @@ export class Bot {
     item = { ...item, jid: this.contactCache.canonicalJid(sourceJid) }
     if (sourceJid !== item.jid) this.contactCache.mergeChatJid(sourceJid, item.jid)
     item.key = { remoteJid: item.jid, ...(item.key || {}) }
-    const displayable = Boolean(item.text || item.media || item.contact || item.interactiveData || item.call || item.linkPreview || item.location) && !isTransportMessage(item.type)
+    const displayable = Boolean(item.text || item.media || item.contact || item.interactiveData || item.call || item.linkPreview || item.location || item.otp) && !isTransportMessage(item.type)
     const messages = this.messages.get(item.jid) || []
     const existingIndex = messages.findIndex(message => message.id === item.id)
     const isNew = existingIndex < 0
@@ -1570,6 +1585,7 @@ export class Bot {
       type,
       interactiveData: messageInteractiveData(msg.message),
       location,
+      otp: messageOtpData(msg.message),
       status: msg.status,
       timestamp: normalizeTimestamp(msg.messageTimestamp)
     }, options)

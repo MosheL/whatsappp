@@ -98,13 +98,23 @@ WhatsApp Cloud API / native-flow interactive messages (templates, buttons, lists
 | --- | --- | --- |
 | `cta_url` | `type: 'url'`, `url`, `display_text` | clickable link opening in a new tab |
 | `call_action` | `type: 'call'`, `phone`, `display_text` | `tel:` link |
-| `copy_code` | `type: 'copy_code'`, `code`, `display_text` | button that copies `code` to clipboard |
+| `copy_code` | `type: 'copy_code'`, `code`/`copy_code`, `display_text` | button that copies `code` to clipboard |
+| `otp_select` | `type: 'otp'`, `display_text`/`text` | passive button (autofill only works on WhatsApp itself) |
 | `quick_reply` | `type: 'quick_reply'`, `id`, `display_text` | disabled button (display only) |
 
 The interactive **body** is rendered through the same `formatMessageText()` parser, so `*bold*`, links, and emails inside the body are formatted. Replies to interactive messages (`interactiveResponseMessage`, e.g. a CTA button tap) are extracted as plain text via `messageText()` and shown as a normal text message.
 
+#### OTP messages (API authentication templates)
+Automatic one-time-password messages sent through the WhatsApp Business API ("*123-456* is your verification code" auth templates) are fully supported. `message-processor.ts → messageOtpData()` extracts an `OtpData { code, otpType? }` block on the `UiMessage` from, in order:
+
+1. the `copy_code` native-flow button params (`copy_code`/`code`),
+2. the code echoed in the body wrapped in bold markers (`*123-456*`),
+3. a standalone 3-4+3 or 4-8 digit number in the body of an autofill-only template (with `otp_select` button).
+
+The thread renders a prominent, click-to-copy code chip above the message body. Regular text messages containing numbers are never flagged as OTP — extraction only applies to `interactiveMessage` auth-template payloads.
+
 #### Unsupported messages
-Message types the UI has no dedicated renderer for (e.g. `locationMessage`, `orderMessage`, `productMessage`, `groupInviteMessage`, `eventMessage`) are shown as a styled **"הודעה לא נתמכת"** placeholder instead of a blank bubble or a raw type string. Detection lives in `web/src/message-renderer.js → isUnsupportedMessage()`: a message is unsupported only when it has no renderable content (no text, media, contact, `interactiveData`, call, view-once, or link preview) **and** its `type` is outside the supported set. Deleted messages are never flagged (they keep their own placeholder). The server-side chat-list preview (`bot.ts`) likewise falls back to `"הודעה לא נתמכת"` for these messages instead of leaking the raw protobuf type.
+Message types the UI has no dedicated renderer for (e.g. `orderMessage`, `productMessage`, `groupInviteMessage`, `eventMessage`) are shown as a styled **"הודעה לא נתמכת"** placeholder instead of a blank bubble or a raw type string. Detection lives in `web/src/message-renderer.js → isUnsupportedMessage()`: a message is unsupported only when it has no renderable content (no text, media, contact, `interactiveData`, call, view-once, link preview, location, or OTP code) **and** its `type` is outside the supported set. Deleted messages are never flagged (they keep their own placeholder). The server-side chat-list previews (`bot.ts` and `chat-store.ts → updateChatFromEditedMessage()`) likewise fall back to `"הודעה לא נתמכת"` for these messages instead of leaking the raw protobuf type.
 
 ### Chats
 - `chat-store.ts` manages chat metadata in Redis
@@ -165,6 +175,7 @@ docker compose up    # Server + Redis + UI
 | POST | `/api/delete-message` | Delete a message |
 | POST | `/api/react-message` | Add/remove reaction |
 | POST | `/api/send-file` | Send file/image |
+| GET | `/api/group-invite` | Group join link (`{ link }`); fails when the bot is not a group admin |
 | GET | `/api/media` | Download media by JID + message ID |
 | GET | `/api/share/&#8203;<token>` | **Public** (no login): last N messages of a shared group (JSON) |
 | GET | `/api/shares?bot=&jid=` | List share links for a group (UI session) |

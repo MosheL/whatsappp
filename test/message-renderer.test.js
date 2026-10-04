@@ -6,6 +6,7 @@ import {
   hasLinkCandidate,
   isForwardedMessage,
   isLocationMessage,
+  isOtpMessage,
   isUnsupportedMessage,
   linkPreviewHref,
   linkPreviewHost,
@@ -241,4 +242,15 @@ test('location message is not flagged as unsupported', () => {
 
 test('location message without location data is still supported (known type)', () => {
   assert.equal(isUnsupportedMessage({ type: 'locationMessage' }), false)
+})
+
+test('OTP messages are supported and preview their verification code', () => {
+  const message = {
+    type: 'interactiveMessage',
+    interactiveData: { type: 'interactive', body: '*123-456* הוא קוד האימות שלך' },
+    otp: { code: '123-456', otpType: 'SMS' }
+  }
+  assert.equal(isUnsupportedMessage(message), false)
+  assert.equal(isOtpMessage(message), true)
+  assert.equal(messagePreview(message), 'קוד אימות: 123-456')
 })

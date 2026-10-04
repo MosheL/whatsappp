@@ -497,6 +497,14 @@ export function isLocationMessage(message) {
 }
 
 /**
+ * Whether a message carries an extracted one-time password (authentication
+ * template sent through the WhatsApp Business API).
+ */
+export function isOtpMessage(message) {
+  return Boolean(message?.otp?.code)
+}
+
+/**
  * Get the interactive type label for display.
  */
 export function interactiveTypeLabel(message) {
@@ -549,7 +557,8 @@ function hasRenderableContent(message) {
     message?.call ||
     message?.viewOnce ||
     message?.linkPreview ||
-    message?.location
+    message?.location ||
+    message?.otp?.code
   )
 }
 
@@ -574,6 +583,7 @@ export function messagePreview(message) {
   if (isContactMessage(message)) {
     return hasMultipleContacts(message) ? 'אנשי קשר' : 'איש קשר'
   }
+  if (isOtpMessage(message)) return `קוד אימות: ${message.otp.code}`
   if (isInteractiveMessage(message)) {
     const data = message.interactiveData
     return data.body || data.title || interactiveTypeLabel(message) || 'הודעה אינטראקטיבית'

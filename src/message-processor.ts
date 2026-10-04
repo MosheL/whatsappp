@@ -1,5 +1,5 @@
 import type { WAMessage, WAMessageContent } from '@whiskeysockets/baileys/lib/Types/Message.js'
-import type { MediaData, LinkPreviewData, ContactData, LocationData, QuotedMessage, CallData, MessagePatch } from './types.ts'
+import type { MediaData, LinkPreviewData, ContactData, LocationData, QuotedMessage, CallData, MessagePatch, OtpData } from './types.ts'
 import { displayPhoneForJidLike } from './contact-cache.ts'
 
 // -------- Timestamp normalization --------
@@ -464,9 +464,17 @@ function nativeFlowButtonData(b: any): InteractiveButton | null {
     button.type = 'call'
     if (phone) button.phone = phone
   } else if (name === 'copy_code') {
-    const code = String(params.code || params.copied_code || '')
+    // Authentication templates carry the code under `copy_code`; generic
+    // copy-code buttons use `code` / `copied_code`.
+    const code = String(params.copy_code || params.code || params.copied_code || '')
     button.type = 'copy_code'
     if (code) button.code = code
+    if (params.id) button.id = String(params.id)
+  } else if (name === 'otp_select') {
+    // Authentication-template autofill button (one-tap / SMS). Nothing the UI
+    // can invoke — rendered as a passive button with its display text.
+    button.type = 'otp'
+    if (!displayText && params.text) button.text = String(params.text)
     if (params.id) button.id = String(params.id)
   } else if (name === 'quick_reply') {
     button.type = 'quick_reply'
@@ -479,6 +487,66 @@ function nativeFlowButtonData(b: any): InteractiveButton | null {
     button.type = name || 'quick_reply'
   }
   return button
+}
+
+// -------- OTP (authentication template) extraction --------
+
+/**
+ * Parse a single native-flow button's params JSON safely.
+ */
+function buttonParams(button: any): any {
+  if (!button?.buttonParamsJson) return {}
+  try {
+    return JSON.parse(button.buttonParamsJson)
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * Extract one-time-password data from an authentication-template message sent
+ * through the WhatsApp Business API ("123-456 is your verification code").
+ *
+ * These arrive as an `interactiveMessage` whose native-flow buttons are
+ * `otp_select` (one-tap autofill) and/or `copy_code` (copy the code). The code
+ * itself usually sits in the copy-code button params and is echoed in the body
+ * wrapped in bold markers (`*123-456*`).
+ */
+export function messageOtpData(message: WAMessageContent | null | undefined): OtpData | undefined {
+  const content = getMessageContent(message)
+  const im = (content as any)?.interactiveMessage
+  if (!im) return undefined
+
+  let code = ''
+  let otpType = ''
+  let hasOtpButton = false
+  const buttons = im.nativeFlowMessage?.buttons || []
+  for (const b of buttons) {
+    const name = String(b?.name || '')
+    if (name !== 'otp_select' && name !== 'copy_code') continue
+    hasOtpButton = hasOtpButton || name === 'otp_select'
+    const params = buttonParams(b)
+    if (name === 'otp_select') {
+      otpType = String(params.otp_type || '') || otpType
+    }
+    code = String(params.copy_code || params.code || params.copied_code || '').trim() || code
+  }
+
+  const bodyText = String(im.body?.text || im.header?.title || '')
+  if (!code && bodyText) {
+    // The code is typically wrapped in bold markers: "*123-456* הוא קוד האימות".
+    const bold = bodyText.match(/\*\s*(\d{3}(?:[ \-]\d{3,4})?|\d{4,8})\s*\*/)
+    if (bold) code = bold[1].trim()
+  }
+  if (!code && (otpType || hasOtpButton) && bodyText) {
+    // Autofill-only template: fall back to a standalone 3-4+3 or 4-8 digit
+    // number in the body text.
+    const bare = bodyText.match(/(?<![\d\-])(\d{3}[ \-]\d{3}|\d{4,8})(?![\d\-])/)
+    if (bare) code = bare[1].trim()
+  }
+
+  if (!code) return undefined
+  return { code, otpType: otpType || undefined }
 }
 
 /**
@@ -646,6 +714,7 @@ export function messagePatchFromContent(message: WAMessageContent | null | undef
   const linkPreview = messageLinkPreview(message)
   const contact = messageContact(message, type)
   const interactiveData = messageInteractiveData(message)
+  const otp = messageOtpData(message)
   const patch: Record<string, any> = { edited: true, forwarded: isForwardedMessage(message) }
   if (type !== 'unknown') patch.type = type
   if (text || media || contact) patch.text = text
@@ -653,6 +722,7 @@ export function messagePatchFromContent(message: WAMessageContent | null | undef
   if (linkPreview) patch.linkPreview = linkPreview
   if (contact) patch.contact = contact
   if (interactiveData) patch.interactiveData = interactiveData
+  if (otp) patch.otp = otp
   return patch
 }
 
