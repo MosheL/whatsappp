@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { isForwardedMessage, isSupportedMessageType, isTransportMessage, messageLinkPreview, messageOtpData, messagePatchFromContent, messageText, messageType, messageInteractiveData, messageLocation, quotedFromIncomingMessage, unwrapMessageForMedia } from '../src/message-processor.ts'
+import { isForwardedMessage, isSupportedMessageType, isTransportMessage, messageLinkPreview, messageMasked, messageOtpData, messagePatchFromContent, messageText, messageType, messageInteractiveData, messageLocation, quotedFromIncomingMessage, unwrapMessageForMedia } from '../src/message-processor.ts'
 
 // -------- OTP (authentication template) messages --------
 
@@ -105,6 +105,21 @@ test('textless auth-template OTP messages are kept and typed as interactive (not
 test('messageType skips transport wrappers for regular content too', () => {
   assert.equal(messageType({ messageContextInfo: {}, imageMessage: { mimetype: 'image/jpeg' } } as any), 'imageMessage')
   assert.equal(messageType({ messageContextInfo: {} } as any), 'messageContextInfo')
+})
+
+test('detects OTP messages masked for linked devices (placeholderMessage)', () => {
+  // Real wire shape of a masked verification code (Time carrier OTP)
+  const maskedContent: any = {
+    messageContextInfo: { deviceListMetadataVersion: 2 },
+    placeholderMessage: { type: 'MASK_LINKED_DEVICES' }
+  }
+  assert.deepEqual(messageMasked(maskedContent), {})
+  // No code to extract — the content never reaches linked devices
+  assert.equal(messageOtpData(maskedContent), undefined)
+  assert.equal(messageText(maskedContent), '')
+  // Other placeholder types are not masked OTPs
+  assert.equal(messageMasked({ placeholderMessage: { type: 'SOMETHING_ELSE' } } as any), undefined)
+  assert.equal(messageMasked({ conversation: 'hi' } as any), undefined)
 })
 
 

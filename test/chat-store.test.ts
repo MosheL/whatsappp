@@ -362,3 +362,32 @@ test('unsupported message types show the notice in the preview, not the raw type
   })
   assert.equal(chats.get(jid)?.lastMessage, 'locationMessage')
 })
+
+test('masked OTP (placeholderMessage) messages bump the chat with a hidden-code label', () => {
+  const jid = '972553055847@s.whatsapp.net'
+  const chats = new Map([[jid, {
+    jid,
+    displayJid: jid,
+    phoneNumber: '',
+    name: 'Time',
+    lastMessage: 'old',
+    lastMessageId: 'otp1',
+    timestamp: 100,
+    unread: 0,
+    avatarUrl: '',
+    isGroup: false
+  }]])
+
+  makeStore(chats).updateChatFromEditedMessage(jid, {
+    id: 'otp1',
+    jid,
+    key: { id: 'otp1', remoteJid: jid },
+    fromMe: false,
+    sender: 'Time',
+    text: '',
+    type: 'placeholderMessage',
+    timestamp: 200
+  })
+  assert.equal(chats.get(jid)?.lastMessage, 'קוד אימות (מוסתר)')
+  assert.equal(chats.get(jid)?.lastMessageId, 'otp1')
+})

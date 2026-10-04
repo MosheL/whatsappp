@@ -11,7 +11,7 @@ import {
   shouldShowMessageStatus, isMyReaction, messageReactions,
   reactionUserKey, formatMessageText,
   mediaKindFromMime, isForwardedMessage, linkPreviewHref, linkPreviewHost, linkPreviewImageStyle,
-  isInteractiveMessage, isLocationMessage, interactiveTypeLabel, isUnsupportedMessage
+  isInteractiveMessage, isLocationMessage, interactiveTypeLabel, isUnsupportedMessage, isMaskedMessage
 } from './message-renderer.js'
 import StatusTick from './StatusTick.vue'
 
@@ -225,6 +225,15 @@ const fullTime = computed(() => formatDateFull(props.message.timestamp))
           <span class="unsupported-icon" aria-hidden="true">📍</span>
           <span class="unsupported-text">מיקום</span>
         </div>
+        <!-- Verification-code message hidden by WhatsApp for linked devices -->
+        <div v-else-if="!message.deleted && isMaskedMessage(message)" class="masked-message">
+          <span class="masked-icon" aria-hidden="true">🔒</span>
+          <div class="masked-copy">
+            <strong class="masked-title">קוד אימות מוסתר</strong>
+            <span class="masked-sub">וואטסאפ מציג הודעות קוד רק בטלפון הראשי</span>
+            <small v-if="message.masked?.business" class="masked-business" dir="auto">מאת {{ message.masked.business }}</small>
+          </div>
+        </div>
         <div v-else-if="!message.deleted && isInteractiveMessage(message) && message.interactiveData" class="interactive-message">
           <!-- OTP (authentication template): prominent copyable code -->
           <button
@@ -338,7 +347,7 @@ const fullTime = computed(() => formatDateFull(props.message.timestamp))
           <span class="unsupported-text">הודעה לא נתמכת</span>
           <small v-if="message.type" class="unsupported-type" dir="ltr">{{ message.type }}</small>
         </div>
-        <p v-if="!isCallMessage(message) && !isContactMessage(message) && !isInteractiveMessage(message) && !isUnsupportedMessage(message)" class="message-text" dir="auto">
+        <p v-if="!isCallMessage(message) && !isContactMessage(message) && !isInteractiveMessage(message) && !isMaskedMessage(message) && !isUnsupportedMessage(message)" class="message-text" dir="auto">
           <template v-for="(part, index) in formattedText" :key="`${message.id}:text:${index}`">
             <a v-if="part.type === 'link'" :class="{ bold: part.bold, strike: part.strike }" :href="part.href" target="_blank" rel="noreferrer">{{ part.text }}</a>
             <a v-else-if="part.type === 'email'" :class="{ bold: part.bold, strike: part.strike }" :href="part.href" target="_blank" rel="noreferrer">{{ part.text }}</a>

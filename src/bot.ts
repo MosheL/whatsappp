@@ -53,6 +53,7 @@ import {
   isTransportMessage,
   isSupportedMessageType,
   messageInteractiveData,
+  messageMasked,
   messageOtpData,
   phoneFromVcard
 } from './message-processor.ts'
@@ -1401,7 +1402,7 @@ export class Bot {
     item = { ...item, jid: this.contactCache.canonicalJid(sourceJid) }
     if (sourceJid !== item.jid) this.contactCache.mergeChatJid(sourceJid, item.jid)
     item.key = { remoteJid: item.jid, ...(item.key || {}) }
-    const displayable = Boolean(item.text || item.media || item.contact || item.interactiveData || item.call || item.linkPreview || item.location || item.otp) && !isTransportMessage(item.type)
+    const displayable = Boolean(item.text || item.media || item.contact || item.interactiveData || item.call || item.linkPreview || item.location || item.otp || item.masked) && !isTransportMessage(item.type)
     const messages = this.messages.get(item.jid) || []
     const existingIndex = messages.findIndex(message => message.id === item.id)
     const isNew = existingIndex < 0
@@ -1430,7 +1431,7 @@ export class Bot {
       console.log('📥 recordUiMessage callback:', 'found currentMessage:', Boolean(currentMessage), 'messageData.status:', messageData.status, 'chat.lastMessageStatus before:', chat.lastMessageStatus)
       if (displayable && isLatestKnown) {
         chat.lastMessageId = messageData.id
-        chat.lastMessage = messageData.text || (messageData.viewOnce ? viewOnceLabel(messageData.viewOnceType) : messageData.contact ? (messageData.contact.contacts?.length ? 'אנשי קשר' : 'איש קשר') : messageData.media?.kind === 'image' ? 'תמונה' : messageData.media?.kind === 'video' ? 'וידאו' : messageData.media?.kind === 'document' ? 'קובץ' : messageData.otp ? `קוד אימות: ${messageData.otp.code}` : messageData.interactiveData ? interactivePreviewLabel(messageData.interactiveData) : messageData.location ? (messageData.location.name || 'מיקום') : isSupportedMessageType(messageData.type) ? messageData.type : 'הודעה לא נתמכת')
+        chat.lastMessage = messageData.text || (messageData.viewOnce ? viewOnceLabel(messageData.viewOnceType) : messageData.contact ? (messageData.contact.contacts?.length ? 'אנשי קשר' : 'איש קשר') : messageData.media?.kind === 'image' ? 'תמונה' : messageData.media?.kind === 'video' ? 'וידאו' : messageData.media?.kind === 'document' ? 'קובץ' : messageData.masked || messageData.type === 'placeholderMessage' ? 'קוד אימות (מוסתר)' : messageData.otp ? `קוד אימות: ${messageData.otp.code}` : messageData.interactiveData ? interactivePreviewLabel(messageData.interactiveData) : messageData.location ? (messageData.location.name || 'מיקום') : isSupportedMessageType(messageData.type) ? messageData.type : 'הודעה לא נתמכת')
         chat.lastMessageFromMe = messageData.fromMe
         // Only overwrite status/receipt if the incoming data has meaningful values.
         // Incoming messages often have undefined status, which would erase the
@@ -1565,10 +1566,18 @@ export class Bot {
     }
     const interactiveData = messageInteractiveData(msg.message)
     const otp = messageOtpData(msg.message)
+    const masked = messageMasked(msg.message)
     // Never drop interactive/OTP payloads (auth templates may have no body text
-    // at all — the code lives in the native-flow buttons).
-    if (!displayText && type === 'unknown' && !contact) return
-    if (!displayText && !media && !contact && !interactiveData && !otp && isTransportMessage(type)) return
+    // at all — the code lives in the native-flow buttons) or masked messages
+    // (WhatsApp hides verification codes from linked devices entirely).
+    if (!displayText && type === 'unknown' && !contact && !masked) return
+    if (!displayText && !media && !contact && !interactiveData && !otp && !masked && isTransportMessage(type)) return
+
+    // Verified business name (e.g. cellular operators sending verification
+    // codes) — prefer it over a bare phone number.
+    const verifiedBusiness = String((msg as any).verifiedBizName || '')
+    let sender = fromMe ? 'אני' : this.contactCache.senderDisplayName(msg.key, msg.pushName || jid)
+    if (!fromMe && (!sender || /^\+?[\d\- ]+$/.test(sender)) && verifiedBusiness) sender = verifiedBusiness
 
     this.recordUiMessage({
       id: msg.key.id || `${Date.now()}`,
@@ -1583,13 +1592,14 @@ export class Bot {
       viewOnceType,
       forwarded: isForwardedMessage(msg.message),
       fromMe,
-      sender: fromMe ? 'אני' : this.contactCache.senderDisplayName(msg.key, msg.pushName || jid),
+      sender,
       senderNumber: isJidGroup(jid) ? this.contactCache.participantPhone(msg) : '',
       text: displayText,
       type,
       interactiveData,
       location,
       otp,
+      masked: masked ? { business: verifiedBusiness || undefined } : undefined,
       status: msg.status,
       timestamp: normalizeTimestamp(msg.messageTimestamp)
     }, options)

@@ -505,6 +505,15 @@ export function isOtpMessage(message) {
 }
 
 /**
+ * Whether the message content is hidden by WhatsApp — verification-code (OTP)
+ * messages are masked for linked devices: only a placeholder arrives, the code
+ * itself is shown on the primary phone only.
+ */
+export function isMaskedMessage(message) {
+  return Boolean(message?.masked) || message?.type === 'placeholderMessage'
+}
+
+/**
  * Get the interactive type label for display.
  */
 export function interactiveTypeLabel(message) {
@@ -558,7 +567,8 @@ function hasRenderableContent(message) {
     message?.viewOnce ||
     message?.linkPreview ||
     message?.location ||
-    message?.otp?.code
+    message?.otp?.code ||
+    message?.masked
   )
 }
 
@@ -583,6 +593,7 @@ export function messagePreview(message) {
   if (isContactMessage(message)) {
     return hasMultipleContacts(message) ? 'אנשי קשר' : 'איש קשר'
   }
+  if (isMaskedMessage(message)) return 'קוד אימות (מוסתר)'
   if (isOtpMessage(message)) return `קוד אימות: ${message.otp.code}`
   if (isInteractiveMessage(message)) {
     const data = message.interactiveData

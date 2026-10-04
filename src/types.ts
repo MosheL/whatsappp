@@ -119,6 +119,16 @@ export type OtpData = {
   otpType?: string
 }
 
+/**
+ * WhatsApp hides certain messages (verification codes) from linked devices:
+ * the primary phone receives the real message, companions only get a
+ * `placeholderMessage` (type MASK_LINKED_DEVICES) with no content.
+ */
+export type MaskedMessageData = {
+  /** Verified business display name from the wire (verifiedBizName), e.g. 'Time' */
+  business?: string
+}
+
 export type UiMessage = {
   id: string
   jid: string
@@ -140,6 +150,7 @@ export type UiMessage = {
   interactiveData?: InteractiveData
   location?: LocationData
   otp?: OtpData
+  masked?: MaskedMessageData
   viewOnce?: boolean
   viewOnceType?: string
   forwarded?: boolean
@@ -202,6 +213,7 @@ export type MessagePatch = Partial<{
   interactiveData: InteractiveData
   location: LocationData
   otp: OtpData
+  masked: MaskedMessageData
   viewOnce: boolean
   viewOnceType: string
   forwarded: boolean

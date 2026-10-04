@@ -1,5 +1,5 @@
 import type { WAMessage, WAMessageContent } from '@whiskeysockets/baileys/lib/Types/Message.js'
-import type { MediaData, LinkPreviewData, ContactData, LocationData, QuotedMessage, CallData, MessagePatch, OtpData } from './types.ts'
+import type { MediaData, LinkPreviewData, ContactData, LocationData, QuotedMessage, CallData, MessagePatch, OtpData, MaskedMessageData } from './types.ts'
 import { displayPhoneForJidLike } from './contact-cache.ts'
 
 // -------- Timestamp normalization --------
@@ -565,6 +565,20 @@ export function messageOtpData(message: WAMessageContent | null | undefined): Ot
 
   if (!code) return undefined
   return { code, otpType: otpType || undefined }
+}
+
+// -------- Masked (hidden) message detection --------
+
+/**
+ * WhatsApp hides verification-code (OTP) messages from linked devices: the
+ * primary phone receives the real message, companions only get a
+ * `placeholderMessage` with type MASK_LINKED_DEVICES and no content.
+ */
+export function messageMasked(message: WAMessageContent | null | undefined): MaskedMessageData | undefined {
+  const content = getMessageContent(message)
+  const placeholder = (content as any)?.placeholderMessage
+  if (!placeholder || placeholder.type !== 'MASK_LINKED_DEVICES') return undefined
+  return {}
 }
 
 /**

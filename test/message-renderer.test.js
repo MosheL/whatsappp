@@ -6,6 +6,7 @@ import {
   hasLinkCandidate,
   isForwardedMessage,
   isLocationMessage,
+  isMaskedMessage,
   isOtpMessage,
   isUnsupportedMessage,
   linkPreviewHref,
@@ -253,4 +254,14 @@ test('OTP messages are supported and preview their verification code', () => {
   assert.equal(isUnsupportedMessage(message), false)
   assert.equal(isOtpMessage(message), true)
   assert.equal(messagePreview(message), 'קוד אימות: 123-456')
+})
+
+test('masked OTP messages (hidden by WhatsApp) render a dedicated notice and bump the chat', () => {
+  const message = { type: 'placeholderMessage', masked: { business: 'Time' } }
+  assert.equal(isMaskedMessage(message), true)
+  // type-only fallback covers messages stored before the masked flag existed
+  assert.equal(isMaskedMessage({ type: 'placeholderMessage' }), true)
+  assert.equal(isMaskedMessage({ type: 'conversation', text: 'hi' }), false)
+  assert.equal(isUnsupportedMessage(message), false)
+  assert.equal(messagePreview(message), 'קוד אימות (מוסתר)')
 })
