@@ -11,7 +11,7 @@ import {
   shouldShowMessageStatus, isMyReaction, messageReactions,
   reactionUserKey, formatMessageText,
   mediaKindFromMime, isForwardedMessage, linkPreviewHref, linkPreviewHost, linkPreviewImageStyle,
-  isInteractiveMessage, isLocationMessage, interactiveTypeLabel, isUnsupportedMessage, isMaskedMessage
+  isInteractiveMessage, isLocationMessage, interactiveTypeLabel, isUnsupportedMessage, isMaskedMessage, isAlbumMessage, albumCountLabel
 } from './message-renderer.js'
 import StatusTick from './StatusTick.vue'
 
@@ -234,6 +234,16 @@ const fullTime = computed(() => formatDateFull(props.message.timestamp))
             <small v-if="message.masked?.business" class="masked-business" dir="auto">מאת {{ message.masked.business }}</small>
           </div>
         </div>
+        <!-- Album placeholder: the individual photos/videos arrive as separate
+             messages right after, they only render the counts here -->
+        <div v-else-if="!message.deleted && isAlbumMessage(message)" class="album-message">
+          <span class="album-icon" aria-hidden="true">🖼️</span>
+          <div class="album-copy">
+            <strong class="album-title">אלבום</strong>
+            <span v-if="albumCountLabel(message)" class="album-counts">{{ albumCountLabel(message) }}</span>
+            <span class="album-sub">התמונות והסרטונים מגיעים בנפרד</span>
+          </div>
+        </div>
         <div v-else-if="!message.deleted && isInteractiveMessage(message) && message.interactiveData" class="interactive-message">
           <!-- OTP (authentication template): prominent copyable code -->
           <button
@@ -347,7 +357,7 @@ const fullTime = computed(() => formatDateFull(props.message.timestamp))
           <span class="unsupported-text">הודעה לא נתמכת</span>
           <small v-if="message.type" class="unsupported-type" dir="ltr">{{ message.type }}</small>
         </div>
-        <p v-if="!isCallMessage(message) && !isContactMessage(message) && !isInteractiveMessage(message) && !isMaskedMessage(message) && !isUnsupportedMessage(message)" class="message-text" dir="auto">
+        <p v-if="!isCallMessage(message) && !isContactMessage(message) && !isInteractiveMessage(message) && !isMaskedMessage(message) && !isAlbumMessage(message) && !isUnsupportedMessage(message)" class="message-text" dir="auto">
           <template v-for="(part, index) in formattedText" :key="`${message.id}:text:${index}`">
             <a v-if="part.type === 'link'" :class="{ bold: part.bold, strike: part.strike }" :href="part.href" target="_blank" rel="noreferrer">{{ part.text }}</a>
             <a v-else-if="part.type === 'email'" :class="{ bold: part.bold, strike: part.strike }" :href="part.href" target="_blank" rel="noreferrer">{{ part.text }}</a>

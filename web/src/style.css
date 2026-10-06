@@ -1202,6 +1202,43 @@ button {
   font-size: 11px;
 }
 
+/* Album placeholder (multi-media post) */
+.album-message {
+  align-items: center;
+  background: #eef4f8;
+  border: 1px solid #d3e0ea;
+  border-radius: 10px;
+  display: flex;
+  gap: 10px;
+  margin: 4px 0;
+  padding: 8px 12px;
+}
+
+.album-icon {
+  font-size: 20px;
+}
+
+.album-copy {
+  display: grid;
+  gap: 1px;
+}
+
+.album-title {
+  color: #145c50;
+  font-size: 13px;
+}
+
+.album-counts {
+  color: #1f2933;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.album-sub {
+  color: #8696a0;
+  font-size: 11px;
+}
+
 /* OTP (authentication template) code chip */
 .otp-code {
   align-items: center;

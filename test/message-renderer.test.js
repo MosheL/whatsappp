@@ -4,6 +4,8 @@ import {
   chatPreviewStatus,
   formatMessageText,
   hasLinkCandidate,
+  albumCountLabel,
+  isAlbumMessage,
   isForwardedMessage,
   isLocationMessage,
   isMaskedMessage,
@@ -254,6 +256,19 @@ test('OTP messages are supported and preview their verification code', () => {
   assert.equal(isUnsupportedMessage(message), false)
   assert.equal(isOtpMessage(message), true)
   assert.equal(messagePreview(message), 'קוד אימות: 123-456')
+})
+
+test('album placeholders render an album label and are never unsupported', () => {
+  const album = { type: 'albumMessage', album: { imageCount: 2, videoCount: 1 } }
+  assert.equal(isAlbumMessage(album), true)
+  // stored before the album flag existed: the type alone is enough
+  assert.equal(isAlbumMessage({ type: 'albumMessage' }), true)
+  assert.equal(isAlbumMessage({ type: 'conversation', text: 'hi' }), false)
+  assert.equal(isUnsupportedMessage(album), false)
+  assert.equal(isUnsupportedMessage({ type: 'albumMessage' }), false)
+  assert.equal(messagePreview(album), 'אלבום (2 תמונות, וידאו אחד)')
+  assert.equal(albumCountLabel({ type: 'albumMessage' }), '')
+  assert.equal(albumCountLabel({ album: { imageCount: 3, videoCount: 0 } }), '3 תמונות')
 })
 
 test('masked OTP messages (hidden by WhatsApp) render a dedicated notice and bump the chat', () => {

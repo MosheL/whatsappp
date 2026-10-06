@@ -1,5 +1,5 @@
 import type { WAMessage, WAMessageContent } from '@whiskeysockets/baileys/lib/Types/Message.js'
-import type { MediaData, LinkPreviewData, ContactData, LocationData, QuotedMessage, CallData, MessagePatch, OtpData, MaskedMessageData } from './types.ts'
+import type { MediaData, LinkPreviewData, ContactData, LocationData, QuotedMessage, CallData, MessagePatch, OtpData, MaskedMessageData, AlbumData } from './types.ts'
 import { displayPhoneForJidLike } from './contact-cache.ts'
 
 // -------- Timestamp normalization --------
@@ -581,6 +581,36 @@ export function messageMasked(message: WAMessageContent | null | undefined): Mas
   return {}
 }
 
+// -------- Album (multi-photo/video post) --------
+
+/**
+ * Album placeholder: WhatsApp sends one `albumMessage` announcing the media
+ * counts, followed by the individual image/video messages as separate
+ * messages (they carry no album id — `pairedMediaType` is always
+ * `NOT_PAIRED_MEDIA` — so no grouping is possible).
+ */
+export function messageAlbum(message: WAMessageContent | null | undefined): AlbumData | undefined {
+  const content = getMessageContent(message)
+  const album = (content as any)?.albumMessage
+  if (!album) return undefined
+  return {
+    imageCount: Number(album.expectedImageCount || 0),
+    videoCount: Number(album.expectedVideoCount || 0)
+  }
+}
+
+/** Chat-list / album-bubble label for an album, e.g. 'אלבום (2 תמונות, 1 וידאו)'. */
+export function albumPreviewLabel(album: { imageCount?: number; videoCount?: number } | undefined | null): string {
+  const images = Number(album?.imageCount || 0)
+  const videos = Number(album?.videoCount || 0)
+  const parts: string[] = []
+  if (images === 1) parts.push('תמונה אחת')
+  else if (images > 1) parts.push(`${images} תמונות`)
+  if (videos === 1) parts.push('וידאו אחד')
+  else if (videos > 1) parts.push(`${videos} סרטונים`)
+  return parts.length ? `אלבום (${parts.join(', ')})` : 'אלבום'
+}
+
 /**
  * Extract interactive data from an interactive message (native flow / shop / collection / carousel).
  */
@@ -659,7 +689,7 @@ export function quotedFromIncomingMessage(msg: WAMessage): QuotedMessage | undef
     id: context.stanzaId,
     sender: context.participant ? displayPhoneForJidLike(context.participant) || context.participant : '',
     text: quotedText,
-    mediaKind: quotedMedia?.kind || viewOnceKindFromType(quotedType) || (quotedType === 'stickerMessage' ? 'sticker' : undefined)
+    mediaKind: quotedMedia?.kind || viewOnceKindFromType(quotedType) || (quotedType === 'stickerMessage' ? 'sticker' : quotedType === 'albumMessage' ? 'album' : undefined)
   }
 }
 
@@ -747,6 +777,7 @@ export function messagePatchFromContent(message: WAMessageContent | null | undef
   const contact = messageContact(message, type)
   const interactiveData = messageInteractiveData(message)
   const otp = messageOtpData(message)
+  const album = messageAlbum(message)
   const patch: Record<string, any> = { edited: true, forwarded: isForwardedMessage(message) }
   if (type !== 'unknown') patch.type = type
   if (text || media || contact) patch.text = text
@@ -755,6 +786,7 @@ export function messagePatchFromContent(message: WAMessageContent | null | undef
   if (contact) patch.contact = contact
   if (interactiveData) patch.interactiveData = interactiveData
   if (otp) patch.otp = otp
+  if (album) patch.album = album
   return patch
 }
 

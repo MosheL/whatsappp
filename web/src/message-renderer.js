@@ -514,6 +514,30 @@ export function isMaskedMessage(message) {
 }
 
 /**
+ * Whether the message is an album placeholder. WhatsApp sends one albumMessage
+ * announcing the media counts, followed by the individual media messages as
+ * separate messages (they carry no album id, so no grouping is possible).
+ */
+export function isAlbumMessage(message) {
+  return Boolean(message?.album) || message?.type === 'albumMessage'
+}
+
+/**
+ * Label for the album bubble / preview, e.g. 'אלבום (2 תמונות, 1 וידאו)'.
+ */
+export function albumCountLabel(message) {
+  const album = message?.album
+  const images = Number(album?.imageCount || 0)
+  const videos = Number(album?.videoCount || 0)
+  const parts = []
+  if (images === 1) parts.push('תמונה אחת')
+  else if (images > 1) parts.push(`${images} תמונות`)
+  if (videos === 1) parts.push('וידאו אחד')
+  else if (videos > 1) parts.push(`${videos} סרטונים`)
+  return parts.join(', ')
+}
+
+/**
  * Get the interactive type label for display.
  */
 export function interactiveTypeLabel(message) {
@@ -568,7 +592,8 @@ function hasRenderableContent(message) {
     message?.linkPreview ||
     message?.location ||
     message?.otp?.code ||
-    message?.masked
+    message?.masked ||
+    isAlbumMessage(message)
   )
 }
 
@@ -594,6 +619,10 @@ export function messagePreview(message) {
     return hasMultipleContacts(message) ? 'אנשי קשר' : 'איש קשר'
   }
   if (isMaskedMessage(message)) return 'קוד אימות (מוסתר)'
+  if (isAlbumMessage(message)) {
+    const counts = albumCountLabel(message)
+    return counts ? `אלבום (${counts})` : 'אלבום'
+  }
   if (isOtpMessage(message)) return `קוד אימות: ${message.otp.code}`
   if (isInteractiveMessage(message)) {
     const data = message.interactiveData

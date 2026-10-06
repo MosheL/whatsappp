@@ -391,3 +391,33 @@ test('masked OTP (placeholderMessage) messages bump the chat with a hidden-code 
   assert.equal(chats.get(jid)?.lastMessage, 'קוד אימות (מוסתר)')
   assert.equal(chats.get(jid)?.lastMessageId, 'otp1')
 })
+
+
+test('album placeholder messages bump the chat with an album label', () => {
+  const jid = '972523238984@g.us'
+  const chats = new Map([[jid, {
+    jid,
+    displayJid: jid,
+    phoneNumber: '',
+    name: 'Album chat',
+    lastMessage: 'old',
+    lastMessageId: 'alb1',
+    timestamp: 100,
+    unread: 0,
+    avatarUrl: '',
+    isGroup: true
+  }]])
+
+  makeStore(chats).updateChatFromEditedMessage(jid, {
+    id: 'alb1',
+    jid,
+    key: { id: 'alb1', remoteJid: jid },
+    fromMe: false,
+    sender: 'them',
+    text: '',
+    type: 'albumMessage',
+    album: { imageCount: 2, videoCount: 0 },
+    timestamp: 200
+  })
+  assert.equal(chats.get(jid)?.lastMessage, 'אלבום (2 תמונות)')
+})

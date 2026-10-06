@@ -129,6 +129,16 @@ export type MaskedMessageData = {
   business?: string
 }
 
+/**
+ * Album placeholder: WhatsApp sends one `albumMessage` announcing the media
+ * counts, followed by the individual image/video messages as separate
+ * messages (they carry no album id, so no grouping is possible).
+ */
+export type AlbumData = {
+  imageCount: number
+  videoCount: number
+}
+
 export type UiMessage = {
   id: string
   jid: string
@@ -151,6 +161,7 @@ export type UiMessage = {
   location?: LocationData
   otp?: OtpData
   masked?: MaskedMessageData
+  album?: AlbumData
   viewOnce?: boolean
   viewOnceType?: string
   forwarded?: boolean
@@ -214,6 +225,7 @@ export type MessagePatch = Partial<{
   location: LocationData
   otp: OtpData
   masked: MaskedMessageData
+  album: AlbumData
   viewOnce: boolean
   viewOnceType: string
   forwarded: boolean

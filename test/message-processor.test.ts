@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { isForwardedMessage, isSupportedMessageType, isTransportMessage, messageLinkPreview, messageMasked, messageOtpData, messagePatchFromContent, messageText, messageType, messageInteractiveData, messageLocation, quotedFromIncomingMessage, unwrapMessageForMedia } from '../src/message-processor.ts'
+import { albumPreviewLabel, isForwardedMessage, isSupportedMessageType, isTransportMessage, messageAlbum, messageLinkPreview, messageMasked, messageOtpData, messagePatchFromContent, messageText, messageType, messageInteractiveData, messageLocation, quotedFromIncomingMessage, unwrapMessageForMedia } from '../src/message-processor.ts'
 
 // -------- OTP (authentication template) messages --------
 
@@ -100,6 +100,45 @@ test('textless auth-template OTP messages are kept and typed as interactive (not
 
   const patch = messagePatchFromContent(content)
   assert.equal(patch.otp?.code, '123456')
+})
+
+test('extracts album placeholder counts and labels them', () => {
+  const content: any = {
+    messageContextInfo: {},
+    albumMessage: { expectedImageCount: 2, expectedVideoCount: 1 }
+  }
+  const album = messageAlbum(content)
+  assert.equal(album?.imageCount, 2)
+  assert.equal(album?.videoCount, 1)
+  assert.equal(messageType(content), 'albumMessage')
+  assert.equal(albumPreviewLabel(album), 'אלבום (2 תמונות, וידאו אחד)')
+  assert.equal(albumPreviewLabel({ imageCount: 1, videoCount: 0 }), 'אלבום (תמונה אחת)')
+  assert.equal(albumPreviewLabel(undefined), 'אלבום')
+  // no counts on the wire -> still an album, just without counts
+  assert.deepEqual(messageAlbum({ albumMessage: {} } as any), { imageCount: 0, videoCount: 0 })
+  // regular messages are not albums
+  assert.equal(messageAlbum({ conversation: 'hi' } as any), undefined)
+  // the patch carries the album data
+  assert.equal(messagePatchFromContent(content).album?.imageCount, 2)
+})
+
+test('quoted album messages show the album badge', () => {
+  const quoted = quotedFromIncomingMessage({
+    key: { id: 'outer' },
+    message: {
+      extendedTextMessage: {
+        text: 'רואה את האלבום?',
+        contextInfo: {
+          stanzaId: 'quoted',
+          participant: '972501234567@s.whatsapp.net',
+          quotedMessage: { albumMessage: {} }
+        }
+      }
+    }
+  } as any)
+
+  assert.equal(quoted?.text, '')
+  assert.equal(quoted?.mediaKind, 'album')
 })
 
 test('messageType skips transport wrappers for regular content too', () => {
