@@ -31,6 +31,7 @@ import {
   whatsappName,
   contactImage
 } from './contact-cache.ts'
+import { buildContactVcard } from './contact-vcard.ts'
 import { ChatStore } from './chat-store.ts'
 import {
   normalizeTimestamp,
@@ -337,12 +338,8 @@ export class Bot {
       const keys = [jid, canonicalJid, phoneNumber].filter(Boolean)
       if (keys.some(key => seen.has(key))) return
       keys.forEach(key => seen.add(key))
-      // Generate a vCard for sending
-      let vcard = ''
-      if (phoneNumber && name) {
-        const cleanPhone = phoneNumber.replace(/[^\d]/g, '')
-        vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${name}\nTEL;TYPE=CELL:+${cleanPhone}\nEND:VCARD`
-      }
+      // Generate a WhatsApp-native vCard (must carry waid so the receiver can chat)
+      const vcard = phoneNumber ? buildContactVcard(name, phoneNumber) : ''
       result.push({ jid: canonicalJid, name, phoneNumber, vcard })
     }
     for (const [jid, contact] of this.contacts) {
@@ -1305,6 +1302,8 @@ export class Bot {
   async sendContact(jid: string, displayName: string, vcard: string) {
     if (!this.sock) throw new Error('Socket not connected')
     jid = this.contactCache.resolveOutgoingJid(jid)
+    const phone = phoneFromVcard(vcard)
+    if (!phone || looksLikeLidNumber(phone)) throw new Error('מספר הטלפון של איש הקשר אינו תקין לשליחה')
     const sent = await this.sock.sendMessage(jid, {
       contacts: {
         displayName,
@@ -1314,7 +1313,7 @@ export class Bot {
     const now = Date.now()
     const resultContact = {
       displayName,
-      phone: phoneFromVcard(vcard)
+      phone
     }
     const message = this.recordUiMessage({
       id: sent?.key?.id || `${now}`,

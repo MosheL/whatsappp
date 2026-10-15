@@ -127,7 +127,7 @@ test('deduplicates LID and phone contacts in the UI contact list', () => {
   }
 
   assert.deepEqual(Bot.prototype.listContacts.call(fakeBot), [
-    { jid: phone, name: 'Alice', phoneNumber: phone, vcard: 'BEGIN:VCARD\nVERSION:3.0\nFN:Alice\nTEL;TYPE=CELL:+972501234567\nEND:VCARD' }
+    { jid: phone, name: 'Alice', phoneNumber: phone, vcard: 'BEGIN:VCARD\nVERSION:3.0\nFN:Alice\nTEL;type=CELL;type=VOICE;waid=972501234567:+972501234567\nEND:VCARD' }
   ])
 })
 

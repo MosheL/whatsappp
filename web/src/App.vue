@@ -12,6 +12,7 @@ import {
   hasLinkCandidate, linkPreviewHref, linkPreviewHost, linkPreviewImageStyle, messagePreview
 } from './message-renderer.js'
 import { messageStatusRank, mergeMessagePatch, reactionUserKey } from '../../src/message-utils.ts'
+import { buildContactVcard, looksLikeLidNumber } from '../../src/contact-vcard.ts'
 import ChatList from './ChatList.vue'
 import ChatThread from './ChatThread.vue'
 import SearchPopup from './SearchPopup.vue'
@@ -1094,16 +1095,14 @@ function closeContactPicker() {
   selectedContactForSend.value = null
 }
 
-// Generate vCard for a contact client-side
+// Generate a WhatsApp-native vCard for a contact client-side.
 function makeVcard(contact) {
-  const phone = (contact.phoneNumber || '').replace(/[^\d]/g, '')
-  if (!phone || !contact.name) return ''
-  return `BEGIN:VCARD\nVERSION:3.0\nFN:${contact.name}\nTEL;TYPE=CELL:+${phone}\nEND:VCARD`
+  return buildContactVcard(contact.name, contact.phoneNumber)
 }
 
 const filteredContacts = computed(() => {
   const term = searchable(contactSearch.value).trim()
-  let list = contacts.value.filter(c => c.phoneNumber && c.name)
+  let list = contacts.value.filter(c => c.phoneNumber && c.name && !looksLikeLidNumber(c.phoneNumber))
   if (!term) return list.slice(0, 100)
   return list.filter(c => {
     const nameMatch = searchable(c.name).includes(term)

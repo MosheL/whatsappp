@@ -1,6 +1,9 @@
 import type { Contact } from '@whiskeysockets/baileys/lib/Types/Contact.js'
 import { isJidGroup } from '@whiskeysockets/baileys'
 import type { UiChat, UiMessage, ContactCacheDeps } from './types.ts'
+import { looksLikeLidNumber } from './contact-vcard.ts'
+
+export { looksLikeLidNumber }
 
 const TYPING_EXPIRY_MS = 10_000
 
@@ -32,11 +35,6 @@ export function normalizePhoneJid(value?: string | null): string {
 export function displayPhoneForJidLike(value: string): string {
   if (!value || value.endsWith('@lid')) return ''
   return value.replace(/@s\.whatsapp\.net$/, '').replace(/[^\d]/g, '')
-}
-
-export function looksLikeLidNumber(value?: string): boolean {
-  const digits = String(value || '').replace(/[^\d]/g, '')
-  return digits.length >= 14 && !digits.startsWith('972')
 }
 
 export function displayPhone(phoneNumber: string): string {
