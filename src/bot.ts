@@ -109,18 +109,43 @@ function publicLinkPreview(preview: Awaited<ReturnType<typeof getUrlInfo>>): Lin
   }
 }
 
-async function transcribeBuffer(buffer: Buffer): Promise<string> {
+/**
+ * Resolve the transcription endpoint. Precedence:
+ *   1. explicit `override` argument
+ *   2. TRANSCRIBE_URL env (full URL, wins over host/port)
+ *   3. TRANSCRIBE_HOST / TRANSCRIBE_PORT env (falling back to REDIS_HOST / 8000)
+ */
+export function transcribeEndpoint(override?: string): string {
+  if (override) return override
+  const explicit = (process.env.TRANSCRIBE_URL || '').trim()
+  if (explicit) return explicit
+  const host = (process.env.TRANSCRIBE_HOST || process.env.REDIS_HOST || '127.0.0.1').trim()
+  const port = (process.env.TRANSCRIBE_PORT || '8000').trim()
+  return `http://${host}:${port}/transcribe`
+}
+
+export function transcribeModel(override?: string): string {
+  return override || process.env.TRANSCRIBE_MODEL || 'ivrit-ai/whisper-large-v3-turbo-ct2'
+}
+
+/**
+ * Transcribe (or translate) a media buffer — audio or video; the server
+ * extracts the audio track itself. Options override the env-configured
+ * endpoint/model, so a caller (or an API request parameter) can point a
+ * single transcription at a different server.
+ */
+export async function transcribeBuffer(buffer: Buffer, opts: { url?: string; model?: string } = {}): Promise<string> {
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), parseInt(process.env.TRANSCRIBE_TIMEOUT_MS, 10) || 300000)
     try {
       const res = await fetch(
-        'http://' + process.env.REDIS_HOST + ':8000/transcribe',
+        transcribeEndpoint(opts.url),
         {
           method: 'POST',
           signal: controller.signal,
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'blob', data: buffer.toString('base64'), model: 'ivrit-ai/whisper-large-v3-turbo-ct2' })
+          body: JSON.stringify({ type: 'blob', data: buffer.toString('base64'), model: transcribeModel(opts.model) })
         }
       )
       if (!res.ok) {
@@ -2144,7 +2169,7 @@ export class Bot {
     // Group events: keep the persisted group name in sync with the authoritative
     // subject (fixes stale/wrong group names cached in Redis), and refresh
     // participants so chat<->contact links stay connected.
-    const applyGroupSubject = (jid: string, subject?: string | null): void => {
+    const applyGroupSubject = (jid: string, subject?: string | null, force = false): void => {
       const canonical = this.contactCache.canonicalJid(jid)
       if (!isJidGroup(canonical)) return
       const chat = this.chats.get(canonical)
@@ -2157,15 +2182,25 @@ export class Bot {
       }
       // Refresh participants + subject from WhatsApp (subject already applied above
       // from the event, this just re-syncs participants/count when the throttle allows).
-      this.contactCache.rememberGroupParticipants(canonical).catch(() => {})
+      // Force a refresh when the event carries an `announce` flag so the read-only
+      // state (who may post) is re-evaluated immediately.
+      this.contactCache.rememberGroupParticipants(canonical, { force }).catch(() => {})
     }
 
     sock.ev.on('groups.update', items => {
-      for (const item of items || []) applyGroupSubject(item.id, item.subject)
+      for (const item of items || []) applyGroupSubject(item.id, item.subject, 'announce' in (item || {}))
     })
 
     sock.ev.on('groups.upsert', items => {
       for (const item of items || []) applyGroupSubject(item.id, item.subject)
+    })
+
+    // Admin promotions/demotions change whether this account may post in an
+    // announcement group — refresh the read-only flag right away.
+    sock.ev.on('group-participants.update', update => {
+      for (const item of Array.isArray(update) ? update : [update]) {
+        if (item?.id) this.contactCache.rememberGroupParticipants(item.id, { force: true }).catch(() => {})
+      }
     })
 
     sock.ev.on('contacts.upsert', items => {
@@ -2250,6 +2285,46 @@ export class Bot {
     })
   }
 
+  /**
+   * Transcribe an audio/video message and attach the text to the message
+   * (persisted in Redis, so it survives reloads and is visible in the UI).
+   * Unless the chat is read-only, the transcript is also posted as a quoted
+   * reply — announcement groups the account can't post to keep the text only
+   * on the message.
+   */
+  async transcribeMessage(jid: string, messageId: string, options: { url?: string; model?: string; force?: boolean; post?: boolean } = {}) {
+    jid = this.contactCache.canonicalJid(jid)
+    const stored = await this.messageStore.getStoredMessage(jid, messageId)
+    if (!stored) throw new Error('ההודעה לא נמצאה')
+    const kind = stored.media?.kind || ''
+    const mimetype = stored.media?.mimetype || ''
+    const transcribable = ['audio', 'ptt', 'video'].includes(kind) || mimetype.startsWith('audio/') || mimetype.startsWith('video/')
+    if (!transcribable) throw new Error('אפשר לתמלל רק הודעות קול או וידאו')
+
+    const readOnly = Boolean(this.chats.get(jid)?.readOnly)
+    if (stored.transcript && !options.force) {
+      return { transcript: stored.transcript, posted: false, readOnly, message: this.publicMessage(stored) }
+    }
+
+    const media = await this.messageStore.getMedia(jid, messageId)
+    const transcript = await transcribeBuffer(media.buffer, { url: options.url, model: options.model })
+    this.updateStoredMessage(jid, messageId, { transcript })
+
+    let posted = false
+    if (options.post !== false && !readOnly && this.sock) {
+      const text = transcript ? `📝 תמלול:\n${transcript}` : 'לא הצלחתי לתמלל.'
+      try {
+        await this.sock.sendMessage(jid, { text }, stored.raw ? { quoted: stored.raw as WAMessage } : undefined)
+        posted = true
+      } catch (err: any) {
+        console.error(`${this.label}: failed posting transcript`, err?.message || err)
+      }
+    }
+
+    const message = (await this.messageStore.getStoredMessage(jid, messageId)) || { ...stored, transcript }
+    return { transcript, posted, readOnly, message: this.publicMessage(message) }
+  }
+
   async handleAudioTranscription(msg: any) {
     if (!msg.message) return
     const type = messageType(msg.message)
@@ -2262,6 +2337,15 @@ export class Bot {
     console.log(`${this.label}: incoming audio ${id} from ${remoteJid}`)
 
     if (this.transcriptionCache.has(id)) return
+
+    // Read-only (announcement) groups cannot be posted to — attach the transcript
+    // to the message instead of sending the "מתמלל..." / "תמלול:" replies.
+    const canonicalJid = this.contactCache.canonicalJid(remoteJid)
+    if (this.chats.get(canonicalJid)?.readOnly) {
+      this.transcribeMessage(canonicalJid, id, { post: false })
+        .catch(err => console.error(`${this.label}: read-only audio transcription failed`, err?.message || err))
+      return
+    }
 
     const tryOnce = async () => {
       this.transcriptionCache.set(id, 'wait')

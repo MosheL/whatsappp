@@ -162,6 +162,8 @@ export type UiMessage = {
   otp?: OtpData
   masked?: MaskedMessageData
   album?: AlbumData
+  /** Speech-to-text of an audio/video message, persisted in Redis with the message. */
+  transcript?: string
   viewOnce?: boolean
   viewOnceType?: string
   forwarded?: boolean
@@ -187,6 +189,8 @@ export type UiChat = {
   isMuted?: boolean
   isArchived?: boolean
   participantCount?: number
+  /** Announcement group the account cannot post to (only admins can send). */
+  readOnly?: boolean
   lastMessageFromMe?: boolean
   lastMessageStatus?: number | string
   lastMessageReceipt?: proto.IUserReceipt
@@ -226,6 +230,7 @@ export type MessagePatch = Partial<{
   otp: OtpData
   masked: MaskedMessageData
   album: AlbumData
+  transcript: string
   viewOnce: boolean
   viewOnceType: string
   forwarded: boolean

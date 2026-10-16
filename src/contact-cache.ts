@@ -350,7 +350,7 @@ export class ContactCache {
    * in-memory chat and persist it. The subject is the authoritative group name, so
    * it overwrites any stale/wrong name that a previous cache may have stored.
    */
-  upsertGroupMetadata(jid: string, metadata: { subject?: string | null; participantCount?: number }): void {
+  upsertGroupMetadata(jid: string, metadata: { subject?: string | null; participantCount?: number; readOnly?: boolean }): void {
     const { chats, persistChat, onChatEvent } = this.deps
     const chat = chats.get(jid)
     if (!chat) return
@@ -361,24 +361,40 @@ export class ContactCache {
     if (typeof metadata.participantCount === 'number' && metadata.participantCount > 0) {
       chat.participantCount = metadata.participantCount
     }
+    if (typeof metadata.readOnly === 'boolean') chat.readOnly = metadata.readOnly
     persistChat(chat)
     onChatEvent(chat)
   }
 
-  async rememberGroupParticipants(jid: string): Promise<void> {
+  /**
+   * Announcement groups (`announce`) only allow admins to send messages. Treat a
+   * group as read-only when it is an announcement group and this account is not
+   * one of its admins.
+   */
+  groupReadOnly(group: any): boolean {
+    if (!group?.announce) return false
+    const participants = group.participants || []
+    const own = participants.find((participant: any) =>
+      this.isOwnJid(participant?.id) || this.isOwnJid(participant?.lid) || this.isOwnJid(participant?.phoneNumber))
+    return !own?.admin
+  }
+
+  async rememberGroupParticipants(jid: string, options: { force?: boolean } = {}): Promise<void> {
     const { redis, groupMetadataCacheKey, groupMetadataCacheMs } = this.deps
     const sock = this.deps.getSock()
     if (!sock || !isJidGroup(jid)) return
     const cacheMs = Math.max(1000, groupMetadataCacheMs)
     const cacheKey = groupMetadataCacheKey(jid)
-    const acquired = await redis.set(cacheKey, String(Date.now()), 'PX', cacheMs, 'NX')
-    if (!acquired) return
+    if (!options.force) {
+      const acquired = await redis.set(cacheKey, String(Date.now()), 'PX', cacheMs, 'NX')
+      if (!acquired) return
+    }
     try {
       const group = await sock.groupMetadata(jid)
-      this.upsertGroupMetadata(jid, { subject: group.subject, participantCount: group.participants?.length || 0 })
+      this.upsertGroupMetadata(jid, { subject: group.subject, participantCount: group.participants?.length || 0, readOnly: this.groupReadOnly(group) })
       for (const participant of group.participants || []) this.rememberContact(participant)
     } catch {
-      await redis.del(cacheKey).catch(() => {})
+      if (!options.force) await redis.del(cacheKey).catch(() => {})
     }
   }
 

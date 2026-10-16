@@ -747,6 +747,31 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
+  // Transcribe (speech-to-text) an audio/video message. `url`/`model` let the
+  // caller target a specific transcription server; read-only groups store the
+  // text on the message instead of posting it.
+  if (req.method === 'POST' && url.pathname === '/api/transcribe') {
+    const parsed = await readBotJson(req, res)
+    if (!parsed) return
+    const { data, bot } = parsed
+    if (!data.jid || !data.id) {
+      sendJson(res, 400, { error: 'חסר נמען או מזהה הודעה' })
+      return
+    }
+    try {
+      const result = await bot.transcribeMessage(data.jid, data.id, {
+        url: typeof data.url === 'string' && data.url ? data.url : undefined,
+        model: typeof data.model === 'string' && data.model ? data.model : undefined,
+        force: Boolean(data.force),
+        post: data.post !== false
+      })
+      sendJson(res, 200, { ok: true, ...result })
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/sync-messages') {
     const parsed = await readBotJson(req, res)
     if (!parsed) return
