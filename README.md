@@ -116,6 +116,36 @@ The thread renders a prominent, click-to-copy code chip above the message body. 
 #### Unsupported messages
 Message types the UI has no dedicated renderer for (e.g. `orderMessage`, `productMessage`, `groupInviteMessage`, `eventMessage`) are shown as a styled **"הודעה לא נתמכת"** placeholder instead of a blank bubble or a raw type string. Detection lives in `web/src/message-renderer.js → isUnsupportedMessage()`: a message is unsupported only when it has no renderable content (no text, media, contact, `interactiveData`, call, view-once, link preview, location, or OTP code) **and** its `type` is outside the supported set. Deleted messages are never flagged (they keep their own placeholder). The server-side chat-list previews (`bot.ts` and `chat-store.ts → updateChatFromEditedMessage()`) likewise fall back to `"הודעה לא נתמכת"` for these messages instead of leaking the raw protobuf type.
 
+#### Transcription (audio & video)
+Audio and video messages expose a **תמלול** button in the UI. It calls
+`POST /api/transcribe` → `bot.transcribeMessage()`, which downloads the media
+(the server extracts the video's audio track itself), posts it to the
+configured transcription service, and attaches the result to the message as
+`UiMessage.transcript`. The transcript is persisted in Redis inside the message
+payload, so it survives reloads and is pushed live to every browser via a
+`message-update` WebSocket event.
+
+- Incoming **audio** is transcribed automatically; **video** (and re-running an
+audio transcription) is triggered from the bubble's button.
+- The service URL is configurable and resolved as: request `url` →
+  `TRANSCRIBE_URL` → `http://${TRANSCRIBE_HOST || REDIS_HOST}:${TRANSCRIBE_PORT || 8000}/transcribe`
+  (see `bot.ts → transcribeEndpoint()` / `transcribeModel()`). The `POST /api/transcribe`
+  body may carry `url`/`model` to target a specific instance (e.g. a CPU vs GPU server).
+- The request is `{ type: 'blob', data: <base64>, model }`; the same shape works for
+  audio and video.
+
+#### Read-only groups
+An **announcement** group (`announce: true` from WhatsApp) where the linked account
+is **not** an admin can only be read, not posted to. `contact-cache.ts → groupReadOnly()`
+detects this and stores `UiChat.readOnly = true` (refreshed on group metadata,
+`groups.update` and `group-participants.update`).
+
+- In a read-only group the transcript is **stored on the message only** — the
+  `📝 מתמלל... / 📝 תמלול:` replies are skipped (both the automatic audio flow and
+  the button), since sending would fail.
+- The composer `<textarea>`, attach/contact/emoji buttons and send button are
+  disabled client-side, with a hint that only admins can post.
+
 ### Chats
 - `chat-store.ts` manages chat metadata in Redis
 - `persistChat()` writes to Redis hash + sorted set for ordering
@@ -162,6 +192,11 @@ docker compose up    # Server + Redis + UI
 | `UI_RESUME_REFRESH_DELAY_MS` | `3s` | Delay before refreshing after reconnect (allows history sync/read receipts to settle) |
 | `SYNC_FULL_HISTORY` | `true` | Request full history on connect |
 | `WA_QUERY_TIMEOUT_MS` | `180s` | Query timeout |
+| `TRANSCRIBE_URL` | empty | Full transcription endpoint URL (wins over host/port) |
+| `TRANSCRIBE_HOST` | `REDIS_HOST` | Transcription server host |
+| `TRANSCRIBE_PORT` | `8000` | Transcription server port |
+| `TRANSCRIBE_MODEL` | `ivrit-ai/whisper-large-v3-turbo-ct2` | Model hint sent to the transcription server |
+| `TRANSCRIBE_TIMEOUT_MS` | `300000` | Transcription request timeout |
 | `WHATSAPP_SHARE_LIMIT` | `300` | Max (and default) message count for public share links |
 
 ## API endpoints
@@ -175,6 +210,7 @@ docker compose up    # Server + Redis + UI
 | POST | `/api/delete-message` | Delete a message |
 | POST | `/api/react-message` | Add/remove reaction |
 | POST | `/api/send-file` | Send file/image |
+| POST | `/api/transcribe` | Transcribe an audio/video message `{ bot, jid, id, url?, model?, force? }` |
 | GET | `/api/group-invite` | Group join link (`{ link }`); fails when the bot is not a group admin |
 | GET | `/api/media` | Download media by JID + message ID |
 | GET | `/api/share/&#8203;<token>` | **Public** (no login): last N messages of a shared group (JSON) |

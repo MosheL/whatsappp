@@ -291,6 +291,34 @@ function copyInteractiveCode(code) {
 // Tapped quick-reply buttons per message, so they render as used.
 const sentButtons = ref(new Set())
 
+// Messages currently being transcribed (shows a spinner on the button).
+const transcribing = ref({})
+function isTranscribing(message) {
+  return Boolean(transcribing.value[message.id])
+}
+
+async function transcribeMedia(message) {
+  if (!message?.id || transcribing.value[message.id]) return
+  transcribing.value = { ...transcribing.value, [message.id]: true }
+  try {
+    const response = await fetch('/api/transcribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bot: props.selectedBot, jid: message.jid || props.selectedChat, id: message.id })
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'אין אפשרות לתמלל')
+    if (data.message) emit('message-update', data.message)
+    else emit('message-update', { ...message, transcript: data.transcript || '' })
+  } catch (err) {
+    emit('error', err?.message || 'אין אפשרות לתמלל')
+  } finally {
+    const next = { ...transcribing.value }
+    delete next[message.id]
+    transcribing.value = next
+  }
+}
+
 function sendButtonReply(message, btn, index) {
   if (!btn?.text || sentButtons.value.has(`${message.id}:${index}`)) return
   sentButtons.value.add(`${message.id}:${index}`)
@@ -298,7 +326,7 @@ function sendButtonReply(message, btn, index) {
 }
 
 const bubbleActions = { emit, beginBubbleDrag, beginMediaDrag, toggleMessageMenu, mediaUrl,
-  loadMedia, finishMediaLoad, copyInteractiveCode, sendButtonReply }
+  loadMedia, finishMediaLoad, copyInteractiveCode, sendButtonReply, transcribeMedia }
 
 // Keep loaded history in the DOM for native find-in-page. CSS skips off-screen
 // layout and painting; stable MessageBubble props avoid unrelated Vue updates.
@@ -442,6 +470,7 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
       :loaded-url="loadedMediaUrl(message) || ''"
       :participant-count="Number(currentChat?.jid === message.jid ? currentChat?.participantCount : 0)"
       :sent-buttons="sentButtons"
+      :transcribing="isTranscribing(message)"
       :actions="bubbleActions"
     />
     <!-- Typing indicator under last message -->

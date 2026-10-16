@@ -127,6 +127,8 @@ const contactsById = computed(() => {
   return index
 })
 const currentChat = computed(() => chatsById.value.get(selectedChat.value))
+// Announcement group the linked account cannot post to (only admins may send).
+const isReadOnly = computed(() => Boolean(currentChat.value?.readOnly))
 const chatTitle = computed(() => currentChat.value?.name || selectedChat.value || 'בחרו שיחה')
 const chatSubtitle = computed(() => ""/* currentChat.value ? chatAddress(currentChat.value) : selectedChat.value*/)
 const selectedFileName = computed(() => selectedFile.value?.name || '')
@@ -977,7 +979,7 @@ function onThreadClick() {
 }
 
 async function sendText() {
-  if (!selectedChat.value || !text.value.trim() || showUploadModal.value) return
+  if (!selectedChat.value || !text.value.trim() || showUploadModal.value || isReadOnly.value) return
   replaceTextEmojis()
   const outgoingText = text.value.trim()
   const outgoingJid = activeSendJid()
@@ -1381,6 +1383,10 @@ function hideDragOverlay() {
 
 function onDropFile(event) {
   hideDragOverlay()
+  if (isReadOnly.value) {
+    error.value = 'הקבוצה לקריאה בלבד — רק מנהלים יכולים לשלוח הודעות'
+    return
+  }
   const file = event.dataTransfer?.files?.[0]
   if (file) openUploadModal(file)
 }
@@ -1806,11 +1812,12 @@ onUnmounted(() => {
           </div>
           <button type="button" title="בטל תגובה" @click="cancelReply">×</button>
         </div>
+        <p v-if="isReadOnly" class="read-only-hint">הקבוצה לקריאה בלבד — רק מנהלים יכולים לשלוח הודעות</p>
         <form class="text-form" @submit.prevent="sendText">
           <div class="composer-actions">
-            <button class="action-button" type="button" :disabled="!selectedChat" title="צרף קובץ" @click="openUploadPicker">📎</button>
-            <button class="action-button" type="button" :disabled="!selectedChat" title="שלח איש קשר" @click="openContactPicker">👤</button>
-            <button class="action-button emoji-action" type="button" :disabled="!selectedChat" title="אימוג׳י" @click.stop="toggleEmojiPanel">
+            <button class="action-button" type="button" :disabled="!selectedChat || isReadOnly" title="צרף קובץ" @click="openUploadPicker">📎</button>
+            <button class="action-button" type="button" :disabled="!selectedChat || isReadOnly" title="שלח איש קשר" @click="openContactPicker">👤</button>
+            <button class="action-button emoji-action" type="button" :disabled="!selectedChat || isReadOnly" title="אימוג׳י" @click.stop="toggleEmojiPanel">
               ☺
             </button>
           </div>
@@ -1819,7 +1826,8 @@ onUnmounted(() => {
             ref="textAreaRef"
             v-model="text"
             rows="1"
-            placeholder="הודעה"
+            :placeholder="isReadOnly ? 'קבוצה לקריאה בלבד' : 'הודעה'"
+            :disabled="isReadOnly"
             @input="updateMentionQuery"
             @click="updateMentionQuery"
             @keyup.space="replaceTextEmojis"
@@ -1836,7 +1844,7 @@ onUnmounted(() => {
               <strong>{{ participant.name }}</strong>
             </button>
           </div>
-          <button type="submit" :disabled="!selectedChat || busy">{{ busy ? 'Preparing...' : 'שלח' }}</button>
+          <button type="submit" :disabled="!selectedChat || busy || isReadOnly">{{ busy ? 'Preparing...' : 'שלח' }}</button>
         </form>
       </footer>
     </section>

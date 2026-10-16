@@ -51,6 +51,14 @@ export function isDownloadableMedia(message) {
 }
 
 /**
+ * Whether a message's audio track can be transcribed (voice notes, audio, video).
+ */
+export function canTranscribe(message) {
+  if (message.deleted) return false
+  return ['audio', 'ptt', 'video'].includes(mediaKind(message))
+}
+
+/**
  * Whether the media has been loaded into the component.
  */
 export function loadedMediaUrl(message, loadedMedia) {

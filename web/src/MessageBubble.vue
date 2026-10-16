@@ -11,7 +11,7 @@ import {
   shouldShowMessageStatus, isMyReaction, messageReactions,
   reactionUserKey, formatMessageText,
   mediaKindFromMime, isForwardedMessage, linkPreviewHref, linkPreviewHost, linkPreviewImageStyle,
-  isInteractiveMessage, isLocationMessage, interactiveTypeLabel, isUnsupportedMessage, isMaskedMessage, isAlbumMessage, albumCountLabel
+  isInteractiveMessage, isLocationMessage, interactiveTypeLabel, isUnsupportedMessage, isMaskedMessage, isAlbumMessage, albumCountLabel, canTranscribe
 } from './message-renderer.js'
 import StatusTick from './StatusTick.vue'
 
@@ -25,11 +25,12 @@ const props = defineProps({
   loadedUrl: { type: String, default: '' },
   participantCount: { type: Number, default: 0 },
   sentButtons: { type: Set, required: true },
+  transcribing: Boolean,
   actions: { type: Object, required: true }
 })
 // One stable action table; state affecting a bubble is passed separately.
 const { emit, beginBubbleDrag, beginMediaDrag, toggleMessageMenu, mediaUrl,
-  loadMedia, finishMediaLoad, copyInteractiveCode, sendButtonReply } = props.actions
+  loadMedia, finishMediaLoad, copyInteractiveCode, sendButtonReply, transcribeMedia } = props.actions
 const formattedText = computed(() => formatMessageText(props.message.text || props.message.type))
 const formattedBody = computed(() => formatMessageText(props.message.interactiveData?.body || ''))
 const displayTime = computed(() => formatTime(props.message.timestamp))
@@ -163,6 +164,20 @@ const fullTime = computed(() => formatDateFull(props.message.timestamp))
             @loadedmetadata="finishMediaLoad(message)"
             @error="finishMediaLoad(message)"
           ></audio>
+          <div v-if="canTranscribe(message)" class="message-transcript">
+            <div v-if="message.transcript" class="transcript-text" dir="auto">
+              <span class="transcript-label">תמלול</span>
+              <p>{{ message.transcript }}</p>
+            </div>
+            <button
+              type="button"
+              class="transcribe-button"
+              :disabled="transcribing"
+              @click.stop="transcribeMedia(message)"
+            >
+              {{ transcribing ? 'מתמלל…' : message.transcript ? 'תמלול מחדש' : 'תמלול' }}
+            </button>
+          </div>
         </div>
         <div v-else-if="!message.deleted && isContactMessage(message)" class="contact-message">
           <span class="contact-icon" aria-hidden="true">&#128100;</span>

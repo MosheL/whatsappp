@@ -77,6 +77,27 @@ test('returns 404 for an unknown bot', async () => {
   assert.equal(typeof body.error, 'string')
 })
 
+test('transcribe route requires an authenticated session', async () => {
+  const { response, body } = await json('/api/transcribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bot: 'bot1', jid: 'x@g.us', id: 'm1' })
+  })
+  assert.equal(response.status, 401)
+  assert.equal(typeof body.error, 'string')
+})
+
+test('transcribe route returns 404 for an unknown bot', async () => {
+  const cookie = await login()
+  const { response, body } = await json('/api/transcribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie },
+    body: JSON.stringify({ bot: 'bot1', jid: 'x@g.us', id: 'm1' })
+  })
+  assert.equal(response.status, 404)
+  assert.equal(typeof body.error, 'string')
+})
+
 test('returns 400 for invalid JSON', async () => {
   const cookie = await login()
   const { response, body } = await json('/api/sync-messages', {

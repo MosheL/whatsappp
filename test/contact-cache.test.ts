@@ -348,3 +348,42 @@ test('clears and emits stale typing presence when no stop event arrives', contex
   assert.equal(emitted.length, 2)
   assert.equal(emitted[1].typing, null)
 })
+
+test('groupReadOnly marks announcement groups read-only unless the account is an admin', () => {
+  const jid = '9725000000000-1234@g.us'
+  const chats = new Map([[jid, { jid, isGroup: true, name: 'Announcements' } as any]])
+  const sock = { user: { id: '972500000001@s.whatsapp.net' } }
+  const cache = new ContactCache({
+    redis: {},
+    label: 'test',
+    contactCacheKey: 'contacts',
+    chatCacheKey: 'chats',
+    chatIndexKey: 'chat-index',
+    groupMetadataCacheKey: value => value,
+    groupMetadataCacheMs: 1000,
+    getSock: () => sock,
+    getOwnId: () => '972500000001@s.whatsapp.net',
+    contacts: new Map(),
+    lidToPhone: new Map(),
+    chats,
+    onChatEvent: () => {},
+    onChatMerge: () => {},
+    loadAvatar: async () => {},
+    persistChat: () => {},
+    trimChatCache: () => {},
+    removeChatStore: async () => {},
+    removeMessageStore: async () => {},
+    removeNonChat: () => {},
+    restoreMessages: async () => {}
+  })
+
+  // Announcement group, account is a plain member -> read-only.
+  assert.equal(cache.groupReadOnly({ announce: true, participants: [{ id: '972500000001@s.whatsapp.net' }] }), true)
+  // Announcement group, account is an admin -> may post.
+  assert.equal(cache.groupReadOnly({ announce: true, participants: [{ id: '972500000001@s.whatsapp.net', admin: 'admin' }] }), false)
+  // Regular group -> not read-only.
+  assert.equal(cache.groupReadOnly({ announce: false, participants: [{ id: '972500000001@s.whatsapp.net' }] }), false)
+
+  cache.upsertGroupMetadata(jid, { readOnly: true })
+  assert.equal(chats.get(jid)?.readOnly, true)
+})

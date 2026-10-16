@@ -1188,3 +1188,87 @@ test('device read receipts (messages.update on incoming messages) clear the chat
 
   assert.deepEqual(cleared, [{ jid: 'chat@s.whatsapp.net', unread: 0 }])
 })
+
+function withStubbedTranscribe(text: string, fn: () => Promise<void>) {
+  const original = globalThis.fetch
+  globalThis.fetch = (async () => new Response(JSON.stringify({ text }), { status: 200, headers: { 'content-type': 'application/json' } })) as typeof fetch
+  return fn().finally(() => { globalThis.fetch = original })
+}
+
+test('transcribeMessage stores the transcript without posting in a read-only group', async () => {
+  const patched: any[] = []
+  const sent: any[] = []
+  const message: any = { id: 'm1', jid: 'group@g.us', type: 'audioMessage', text: '', media: { kind: 'audio', mimetype: 'audio/ogg' }, raw: { key: { id: 'm1' } } }
+  const fakeBot: any = {
+    chats: new Map([['group@g.us', { jid: 'group@g.us', readOnly: true }]]),
+    contactCache: { canonicalJid: (jid: string) => jid },
+    messageStore: {
+      getStoredMessage: async () => ({ ...message }),
+      getMedia: async () => ({ buffer: Buffer.from('audio'), mimetype: 'audio/ogg', fileName: 'a.ogg' })
+    },
+    sock: { sendMessage: async (...args: any[]) => { sent.push(args); return { key: {} } } },
+    updateStoredMessage: (jid: string, id: string, patch: any) => patched.push({ jid, id, patch }),
+    publicMessage: (value: any) => value
+  }
+
+  await withStubbedTranscribe('שלום', async () => {
+    const result = await Bot.prototype.transcribeMessage.call(fakeBot, 'group@g.us', 'm1')
+    assert.equal(result.transcript, 'שלום')
+    assert.equal(result.readOnly, true)
+    assert.equal(result.posted, false)
+  })
+  assert.deepEqual(patched, [{ jid: 'group@g.us', id: 'm1', patch: { transcript: 'שלום' } }])
+  assert.equal(sent.length, 0)
+})
+
+test('transcribeMessage posts a quoted reply in a writable group', async () => {
+  const sent: any[] = []
+  const message: any = { id: 'm2', jid: 'chat@g.us', type: 'videoMessage', text: '', media: { kind: 'video', mimetype: 'video/mp4' }, raw: { key: { id: 'm2' } } }
+  const fakeBot: any = {
+    chats: new Map([['chat@g.us', { jid: 'chat@g.us' }]]),
+    contactCache: { canonicalJid: (jid: string) => jid },
+    messageStore: {
+      getStoredMessage: async () => ({ ...message }),
+      getMedia: async () => ({ buffer: Buffer.from('video'), mimetype: 'video/mp4', fileName: 'v.mp4' })
+    },
+    sock: { sendMessage: async (jid: string, content: any, opts: any) => { sent.push({ jid, content, opts }); return { key: {} } } },
+    updateStoredMessage: () => {},
+    publicMessage: (value: any) => value
+  }
+
+  await withStubbedTranscribe('hello', async () => {
+    const result = await Bot.prototype.transcribeMessage.call(fakeBot, 'chat@g.us', 'm2')
+    assert.equal(result.posted, true)
+    assert.equal(result.readOnly, false)
+  })
+  assert.equal(sent.length, 1)
+  assert.match(sent[0].content.text, /hello/)
+  assert.equal(sent[0].opts.quoted.key.id, 'm2')
+})
+
+test('transcribeMessage returns a cached transcript without hitting the network', async () => {
+  let fetchCalls = 0
+  const original = globalThis.fetch
+  globalThis.fetch = (async () => { fetchCalls++; return new Response('{}', { status: 200 }) }) as typeof fetch
+  const fakeBot: any = {
+    chats: new Map(),
+    contactCache: { canonicalJid: (jid: string) => jid },
+    messageStore: { getStoredMessage: async () => ({ id: 'm', jid: 'c@s.whatsapp.net', media: { kind: 'audio' }, transcript: 'cached' }) },
+    publicMessage: (value: any) => value
+  }
+  try {
+    const result = await Bot.prototype.transcribeMessage.call(fakeBot, 'c@s.whatsapp.net', 'm')
+    assert.equal(result.transcript, 'cached')
+    assert.equal(fetchCalls, 0)
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
+test('transcribeMessage rejects messages that are not audio or video', async () => {
+  const fakeBot: any = {
+    contactCache: { canonicalJid: (jid: string) => jid },
+    messageStore: { getStoredMessage: async () => ({ id: 'x', jid: 'c@s.whatsapp.net', media: { kind: 'image', mimetype: 'image/jpeg' } }) }
+  }
+  await assert.rejects(() => Bot.prototype.transcribeMessage.call(fakeBot, 'c@s.whatsapp.net', 'x'), /קול או וידאו/)
+})

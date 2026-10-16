@@ -11,6 +11,7 @@ import {
   isMaskedMessage,
   isOtpMessage,
   isUnsupportedMessage,
+  canTranscribe,
   linkPreviewHref,
   linkPreviewHost,
   messageDeliveryState,
@@ -279,4 +280,14 @@ test('masked OTP messages (hidden by WhatsApp) render a dedicated notice and bum
   assert.equal(isMaskedMessage({ type: 'conversation', text: 'hi' }), false)
   assert.equal(isUnsupportedMessage(message), false)
   assert.equal(messagePreview(message), 'קוד אימות (מוסתר)')
+})
+
+test('canTranscribe covers voice notes, audio and video only', () => {
+  assert.equal(canTranscribe({ media: { kind: 'audio' } }), true)
+  assert.equal(canTranscribe({ media: { kind: 'ptt' } }), true)
+  assert.equal(canTranscribe({ media: { kind: 'video' } }), true)
+  assert.equal(canTranscribe({ media: { kind: 'image' } }), false)
+  assert.equal(canTranscribe({ media: { kind: 'document' } }), false)
+  assert.equal(canTranscribe({ type: 'conversation', text: 'hi' }), false)
+  assert.equal(canTranscribe({ media: { kind: 'video' }, deleted: true }), false)
 })
