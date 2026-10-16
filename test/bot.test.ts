@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { Bot, linkPreviewUrlFromText } from '../src/bot.ts'
+import { MESSAGE_EDIT_WINDOW_MS } from '../src/message-utils.ts'
 import { messageLocation } from '../src/message-processor.ts'
 
 test('marks dragged media as forwarded and preserves audio media kind', async () => {
@@ -1271,4 +1272,126 @@ test('transcribeMessage rejects messages that are not audio or video', async () 
     messageStore: { getStoredMessage: async () => ({ id: 'x', jid: 'c@s.whatsapp.net', media: { kind: 'image', mimetype: 'image/jpeg' } }) }
   }
   await assert.rejects(() => Bot.prototype.transcribeMessage.call(fakeBot, 'c@s.whatsapp.net', 'x'), /קול או וידאו/)
+})
+
+test('editMessage sends a WhatsApp edit and patches the stored text', async () => {
+  const sent: any[] = []
+  const patched: any[] = []
+  const message: any = { id: 'm1', jid: 'chat@s.whatsapp.net', fromMe: true, text: 'old', type: 'conversation', timestamp: Date.now(), key: { remoteJid: 'chat@s.whatsapp.net', id: 'm1', fromMe: true } }
+  const fakeBot: any = {
+    contactCache: { canonicalJid: (jid: string) => jid },
+    messageStore: { getStoredMessage: async () => message },
+    sock: { sendMessage: async (jid: string, content: any) => { sent.push({ jid, content }); return { key: {} } } },
+    updateStoredMessage: (jid: string, id: string, patch: any) => { patched.push({ jid, id, patch }); Object.assign(message, patch) },
+    publicMessage: (value: any) => value
+  }
+
+  const result = await Bot.prototype.editMessage.call(fakeBot, 'chat@s.whatsapp.net', 'm1', '  new text  ')
+  assert.equal(sent.length, 1)
+  assert.deepEqual(sent[0].content, { text: 'new text', edit: { remoteJid: 'chat@s.whatsapp.net', id: 'm1', fromMe: true } })
+  assert.deepEqual(patched, [{ jid: 'chat@s.whatsapp.net', id: 'm1', patch: { text: 'new text', edited: true } }])
+  assert.equal(result.message.text, 'new text')
+})
+
+test('editMessage rejects incoming messages and empty text', async () => {
+  const fakeBot: any = {
+    contactCache: { canonicalJid: (jid: string) => jid },
+    messageStore: { getStoredMessage: async () => ({ id: 'm', jid: 'c@s.whatsapp.net', fromMe: false, text: 'x', timestamp: Date.now() }) },
+    sock: { sendMessage: async () => ({}) }
+  }
+  await assert.rejects(() => Bot.prototype.editMessage.call(fakeBot, 'c@s.whatsapp.net', 'm', 'y'), /רק הודעות שנשלחו/)
+  await assert.rejects(() => Bot.prototype.editMessage.call(fakeBot, 'c@s.whatsapp.net', 'm', '   '), /אין טקסט/)
+})
+
+test('a revoke protocol message keeps a tombstone (delete for everyone)', () => {
+  const patched: any[] = []
+  const fakeBot: any = {
+    contactCache: { isOwnMessage: () => false },
+    reactionMessagePatch: () => undefined,
+    deletedMessagePatch: () => ({ jid: 'group@g.us', id: 'm1', patch: { deleted: true } }),
+    updateStoredMessage: (jid: string, id: string, patch: any) => patched.push({ jid, id, patch })
+  }
+  Bot.prototype.recordBaileysMessage.call(fakeBot, { key: { remoteJid: 'group@g.us', id: 'revoke' }, message: {} })
+  assert.deepEqual(patched, [{ jid: 'group@g.us', id: 'm1', patch: { deleted: true } }])
+})
+
+test('deleteMessage sends a revoke and keeps a tombstone (delete for everyone)', async () => {
+  const sent: any[] = []
+  const patched: any[] = []
+  const fakeBot: any = {
+    sock: { sendMessage: async (jid: string, content: any) => { sent.push({ jid, content }); return {} } },
+    contactCache: { canonicalJid: (jid: string) => jid },
+    messageStore: { getStoredMessage: async () => ({ id: 'm1', jid: 'c@s.whatsapp.net', key: { remoteJid: 'c@s.whatsapp.net', id: 'm1' } }) },
+    updateStoredMessage: (jid: string, id: string, patch: any) => patched.push({ jid, id, patch }),
+    removeStoredMessage: async () => { throw new Error('must not hard-delete on a remote delete') }
+  }
+  const result = await Bot.prototype.deleteMessage.call(fakeBot, 'c@s.whatsapp.net', 'm1')
+  assert.equal(sent[0].content.delete.id, 'm1')
+  assert.equal(patched[0].patch.deleted, true)
+  assert.equal(result.patch.deleted, true)
+})
+
+test('deleteMessage with local:true removes the message from the store without a revoke', async () => {
+  const sent: any[] = []
+  const removed: any[] = []
+  const fakeBot: any = {
+    sock: { sendMessage: async (...args: any[]) => { sent.push(args); return {} } },
+    contactCache: { canonicalJid: (jid: string) => jid },
+    removeStoredMessage: async (jid: string, id: string) => { removed.push({ jid, id }) }
+  }
+  const result = await Bot.prototype.deleteMessage.call(fakeBot, 'c@s.whatsapp.net', 'm1', { local: true })
+  assert.deepEqual(removed, [{ jid: 'c@s.whatsapp.net', id: 'm1' }])
+  assert.equal(sent.length, 0)
+  assert.equal(result.local, true)
+})
+
+test('removeStoredMessage drops it from the store and notifies clients', async () => {
+  const removed: any[] = []
+  const events: any[] = []
+  const chat: any = { jid: 'c@s.whatsapp.net', lastMessageId: 'other' }
+  const fakeBot: any = {
+    authKey: 'bot1',
+    contactCache: { canonicalJid: (jid: string) => jid },
+    chats: new Map([['c@s.whatsapp.net', chat]]),
+    messages: new Map(),
+    messageStore: { removeStoredMessage: async (jid: string, id: string) => { removed.push({ jid, id }) } },
+    chatStore: { updateChatFromEditedMessage: () => {} },
+    events: { emit: (type: string, payload: any) => events.push({ type, payload }) },
+    persistChat: () => {}
+  }
+  await Bot.prototype.removeStoredMessage.call(fakeBot, 'c@s.whatsapp.net', 'm1')
+  assert.deepEqual(removed, [{ jid: 'c@s.whatsapp.net', id: 'm1' }])
+  assert.deepEqual(events, [{ type: 'event', payload: { type: 'message-remove', bot: 'bot1', jid: 'c@s.whatsapp.net', id: 'm1' } }])
+})
+
+test('removeStoredMessage refreshes the chat preview when the last message is deleted', async () => {
+  const events: any[] = []
+  const chat: any = { jid: 'c@s.whatsapp.net', lastMessageId: 'm2', lastMessage: 'bye' }
+  const fakeBot: any = {
+    authKey: 'bot1',
+    contactCache: { canonicalJid: (jid: string) => jid },
+    chats: new Map([['c@s.whatsapp.net', chat]]),
+    messages: new Map([['c@s.whatsapp.net', [{ id: 'm1', jid: 'c@s.whatsapp.net', timestamp: 1, text: 'hi' }]]]),
+    messageStore: { removeStoredMessage: async () => {} },
+    chatStore: { updateChatFromEditedMessage: (_jid: string, message: any) => { chat.lastMessage = message.text } },
+    events: { emit: (type: string, payload: any) => events.push({ type, payload }) },
+    persistChat: () => {}
+  }
+  await Bot.prototype.removeStoredMessage.call(fakeBot, 'c@s.whatsapp.net', 'm2')
+  assert.equal(chat.lastMessageId, 'm1')
+  assert.equal(chat.lastMessage, 'hi')
+})
+
+test('editMessage refuses expired edits without sending or patching', async () => {
+  const sent: any[] = []
+  const patched: any[] = []
+  const fakeBot: any = {
+    contactCache: { canonicalJid: (jid: string) => jid },
+    messageStore: { getStoredMessage: async () => ({ id: 'm', jid: 'c@s.whatsapp.net', fromMe: true, text: 'old', timestamp: Date.now() - MESSAGE_EDIT_WINDOW_MS - 60_000 }) },
+    sock: { sendMessage: async (...args: any[]) => { sent.push(args); return {} } },
+    updateStoredMessage: (...args: any[]) => patched.push(args)
+  }
+  await assert.rejects(() => Bot.prototype.editMessage.call(fakeBot, 'c@s.whatsapp.net', 'm', 'new'), /15 דקות/)
+  assert.equal(sent.length, 0)
+  assert.equal(patched.length, 0)
 })

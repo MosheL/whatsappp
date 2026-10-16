@@ -83,6 +83,7 @@ Outgoing and incoming text is rendered by `web/src/message-renderer.js → forma
 | `*bold*` | **bold** (`<strong>`) |
 | `~struck~` | ~~struck~~ (`<del>`) |
 | `*bold ~strike~*` | combined bold + strike |
+| ``` ```monospace``` ``` | `monospace` (literal `<code class="mono">`; inner `*`/`~`/links are not parsed) |
 | `https://example.com` / `www.example.com` | regular http(s) link |
 | `wa.me/123…` / `chat.whatsapp.com/CODE` / `whatsapp.com/…` | WhatsApp link, no scheme needed (`href` is rewritten to `https://…`) |
 | `user@example.com` | `mailto:` link |
@@ -90,6 +91,19 @@ Outgoing and incoming text is rendered by `web/src/message-renderer.js → forma
 | `@someone` (no TLD) | plain mention |
 
 Overlap resolution: emails beat mentions, URLs beat emails, WhatsApp link regex runs independently. The same parser is used by both the message bubble (`ChatThread.vue`) and the chat-list preview (`messagePreview`).
+
+#### Editing sent messages
+Outgoing (`fromMe`) text messages can be edited from the bubble's ⋯ menu (**ערוך**). The composer switches to edit mode — same `<textarea>`, prefilled with the current text and a cancel strip — and **ערוך** submits `POST /api/edit-message` → `bot.editMessage()`, which sends WhatsApp's `{ edit: key, text }` and patches the stored message (`text` + `edited: true`) so every browser updates live. The `נערך` label is shown on the bubble.
+
+WhatsApp only accepts an edit within **15 minutes** of the original message. Baileys relays `{ edit }` and resolves without confirming server acceptance, so this window is enforced on both sides via `message-utils.ts → isMessageEditable()` / `MESSAGE_EDIT_WINDOW_MS`: the menu hides **ערוך** for older messages, and `bot.editMessage()` refuses before sending, so an expired edit can never be relayed and then marked edited locally. The server is authoritative if the clocks disagree, and the error is surfaced in the composer.
+
+#### Deleting messages
+WhatsApp has two kinds of delete, handled differently:
+
+- **Delete for everyone** (delete in the group) keeps a **tombstone**: the message stays, flagged `deleted` (`deletedAt` / `deletedBy`), and renders as **הודעה נמחקה**. It arrives as a `protocolMessage` REVOKE upsert (`bot.deletedMessagePatch()`) or as a `messages.update` entry with `message: null` / `messageStubType: 'REVOKE'` (the usual path on linked devices). Both go through `updateStoredMessage()`.
+- **Delete for me** (delete locally, synced across our own devices through app state) is **removed entirely** from memory and Redis. Baileys emits a `messages.delete` event; `bot.removeStoredMessage()` drops the in-memory entry, the Redis payload, the timestamp index and the cached media, recomputes the chat preview when it was the last message, and emits a `message-remove` WebSocket event so open clients splice it out of the thread.
+
+In the UI, the bubble menu's **מחק** deletes for everyone (revoke + local tombstone, as WhatsApp shows it). **Shift+Delete** on the hovered message (or the one whose action menu is open) deletes it locally only — `POST /api/delete-message` with `{ local: true }` — removing it from memory and Redis with no revoke.
 
 #### Interactive messages
 WhatsApp Cloud API / native-flow interactive messages (templates, buttons, lists, and `interactiveMessage`) are parsed by `message-processor.ts → messageInteractiveData()` into an `InteractiveData` block on the `UiMessage`, and rendered by `ChatThread.vue` with clickable buttons. Native-flow buttons carry their payload as a `buttonParamsJson` JSON string; the parser decodes it per button type:
@@ -207,10 +221,11 @@ docker compose up    # Server + Redis + UI
 | POST | `/api/sync-messages` | Fetch older messages for a chat |
 | POST | `/api/mark-read` | Mark chat as read |
 | POST | `/api/mark-all-read` | Mark all chats as read |
-| POST | `/api/delete-message` | Delete a message |
+| POST | `/api/delete-message` | Delete a message for everyone; add `{ local: true }` to delete it only from our store |
 | POST | `/api/react-message` | Add/remove reaction |
 | POST | `/api/send-file` | Send file/image |
 | POST | `/api/transcribe` | Transcribe an audio/video message `{ bot, jid, id, url?, model?, force? }` |
+| POST | `/api/edit-message` | Edit an outgoing text message `{ bot, jid, id, text }` |
 | GET | `/api/group-invite` | Group join link (`{ link }`); fails when the bot is not a group admin |
 | GET | `/api/media` | Download media by JID + message ID |
 | GET | `/api/share/&#8203;<token>` | **Public** (no login): last N messages of a shared group (JSON) |

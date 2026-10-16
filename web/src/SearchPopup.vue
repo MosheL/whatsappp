@@ -548,6 +548,7 @@ function senderName(message) {
                   <template v-for="(part, index) in formatMessageText(message.text || message.type)" :key="`${message.id}:${index}`">
                     <a v-if="part.type === 'link'" :class="{ bold: part.bold, strike: part.strike }" :href="part.href" target="_blank" rel="noreferrer">{{ part.text }}</a>
                     <a v-else-if="part.type === 'email'" :class="{ bold: part.bold, strike: part.strike }" :href="part.href" target="_blank" rel="noreferrer">{{ part.text }}</a>
+                    <code v-else-if="part.type === 'mono'" class="mono" :class="{ bold: part.bold, strike: part.strike }" dir="ltr">{{ part.text }}</code>
                     <strong v-else-if="part.bold && !part.strike">{{ part.text }}</strong>
                     <strong v-else-if="part.bold && part.strike"><del>{{ part.text }}</del></strong>
                     <del v-else-if="part.strike">{{ part.text }}</del>

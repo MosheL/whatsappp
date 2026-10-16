@@ -772,6 +772,24 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
+  // Edit a previously sent (fromMe) text message.
+  if (req.method === 'POST' && url.pathname === '/api/edit-message') {
+    const parsed = await readBotJson(req, res)
+    if (!parsed) return
+    const { data, bot } = parsed
+    if (!data.jid || !data.id || typeof data.text !== 'string') {
+      sendJson(res, 400, { error: 'חסר נמען, מזהה או טקסט' })
+      return
+    }
+    try {
+      const result = await bot.editMessage(data.jid, data.id, data.text)
+      sendJson(res, 200, { ok: true, ...result })
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/sync-messages') {
     const parsed = await readBotJson(req, res)
     if (!parsed) return
@@ -895,7 +913,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         sendJson(res, 400, { error: 'חסר נמען או הודעה' })
         return
       }
-      const result = await parsed.bot.deleteMessage(parsed.data.jid, parsed.data.id)
+      const result = await parsed.bot.deleteMessage(parsed.data.jid, parsed.data.id, { local: Boolean(parsed.data.local) })
       sendJson(res, 200, { ok: true, ...result })
     } catch (err: any) {
       sendJson(res, 500, { error: err.message })

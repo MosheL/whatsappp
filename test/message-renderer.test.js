@@ -282,6 +282,28 @@ test('masked OTP messages (hidden by WhatsApp) render a dedicated notice and bum
   assert.equal(messagePreview(message), 'קוד אימות (מוסתר)')
 })
 
+test('monospace fences render literal code without nested markup', () => {
+  const tokens = formatMessageText('run ```npm test``` now')
+  const mono = tokens.find(token => token.type === 'mono')
+  assert.equal(mono.text, 'npm test')
+  assert.equal(tokens.map(token => token.text).join(''), 'run npm test now')
+
+  // Content inside a fence is literal: *x* is not bold.
+  assert.deepEqual(formatMessageText('```*not bold*```'), [{ type: 'mono', text: '*not bold*', bold: false, strike: false }])
+
+  // Fences nest inside bold and inherit the flag.
+  const nested = formatMessageText('*bold ```x``` end*').find(token => token.type === 'mono')
+  assert.equal(nested.text, 'x')
+  assert.equal(nested.bold, true)
+
+  // Rendered HTML (chat-list preview) wraps the code element.
+  assert.match(messagePreview({ text: 'use ```code``` here' }), /<code class="mono">code<\/code>/)
+
+  // Unbalanced/in-line fence stays literal text.
+  assert.equal(formatMessageText('a ```b').some(token => token.type === 'mono'), false)
+  assert.equal(formatMessageText('``` ```').some(token => token.type === 'mono'), false)
+})
+
 test('canTranscribe covers voice notes, audio and video only', () => {
   assert.equal(canTranscribe({ media: { kind: 'audio' } }), true)
   assert.equal(canTranscribe({ media: { kind: 'ptt' } }), true)

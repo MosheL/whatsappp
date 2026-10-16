@@ -4,6 +4,33 @@
 import type { UiMessage } from './types.ts'
 
 /**
+ * WhatsApp only accepts an edit within this window after the original message.
+ * Baileys relays `{ edit }` via `relayMessage` and resolves without confirming
+ * server acceptance, so the window must be enforced here — by the server before
+ * updating local history, and by the client before offering the edit button.
+ */
+export const MESSAGE_EDIT_WINDOW_MS = 15 * 60 * 1000
+
+type EditableMessage = {
+  fromMe?: boolean
+  deleted?: boolean
+  text?: string
+  timestamp?: number
+}
+
+/**
+ * Whether an outgoing text message may still be edited (within the window and
+ * not deleted). Shared by `bot.editMessage()` and the message menu so the two
+ * agree on eligibility.
+ */
+export function isMessageEditable(message: EditableMessage | null | undefined, now: number = Date.now()): boolean {
+  if (!message?.fromMe || message.deleted || !message.text) return false
+  const timestamp = Number(message.timestamp || 0)
+  if (!timestamp) return false
+  return now - timestamp <= MESSAGE_EDIT_WINDOW_MS
+}
+
+/**
  * Rank message status for comparison.
  * Higher rank = "more delivered/read".
  */

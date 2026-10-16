@@ -130,6 +130,31 @@ export class MessageStore {
     if (recent.length) messages.set(toJid, recent)
   }
 
+  /**
+   * Permanently drop a message: memory, the timestamp index, the JSON payload
+   * and any cached media. Used when a message is deleted (revoked) so Redis
+   * does not keep a tombstone.
+   */
+  async removeStoredMessage(jid: string, messageId: string): Promise<void> {
+    const { redis, messageIndexKey, messagePayloadKey, mediaCacheKey, messages, canonicalJid } = this.deps
+    jid = canonicalJid(jid)
+    const memory = messages.get(jid)
+    if (memory) {
+      const index = memory.findIndex(message => message.id === messageId)
+      if (index >= 0) {
+        const next = [...memory]
+        next.splice(index, 1)
+        messages.set(jid, next)
+      }
+    }
+    await redis
+      .multi()
+      .zrem(messageIndexKey(jid), messageId)
+      .del(messagePayloadKey(jid, messageId))
+      .del(mediaCacheKey(jid, messageId))
+      .exec()
+  }
+
   async persistMedia(jid: string, messageId: string, buffer: Buffer): Promise<void> {
     const { redis, mediaCacheKey, MEDIA_CACHE_TTL_SECONDS, canonicalJid } = this.deps
     try {

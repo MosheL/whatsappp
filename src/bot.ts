@@ -61,7 +61,7 @@ import {
   phoneFromVcard
 } from './message-processor.ts'
 import { MessageStore } from './message-store.ts'
-import { mergeMessagePatch, messageStatusRank } from './message-utils.ts'
+import { mergeMessagePatch, messageStatusRank, isMessageEditable } from './message-utils.ts'
 
 const redisOptions = {
   host: process.env.REDIS_HOST ?? '127.0.0.1',
@@ -1216,15 +1216,58 @@ export class Bot {
     return promise
   }
 
-  async deleteMessage(jid: string, messageId: string) {
-    if (!this.sock) throw new Error('Socket not connected')
+  /**
+   * Delete a message. Default is "delete for everyone": send WhatsApp's revoke
+   * and keep the local tombstone (as WhatsApp shows it). With `local: true` it
+   * is "delete for me": drop it from our memory and Redis without notifying
+   * anyone.
+   */
+  async deleteMessage(jid: string, messageId: string, options: { local?: boolean } = {}) {
     jid = this.contactCache.canonicalJid(jid)
+    if (options.local) {
+      await this.removeStoredMessage(jid, messageId)
+      return { id: messageId, removed: true, local: true }
+    }
+    if (!this.sock) throw new Error('Socket not connected')
     const message = await this.messageStore.getStoredMessage(jid, messageId)
     if (!message?.key?.id) throw new Error('הודעה לא נמצאה')
     await this.sock.sendMessage(jid, { delete: { ...message.key, remoteJid: jid } })
     const patch: MessagePatch = { deleted: true, deletedAt: Date.now(), deletedBy: this.id || 'me' }
     this.updateStoredMessage(jid, messageId, patch)
     return { id: messageId, patch }
+  }
+
+  /**
+   * Permanently remove a message (deleted from the device) from memory and
+   * Redis, refresh the chat preview when it was the last one, and tell every
+   * client to drop it from the thread.
+   */
+  async removeStoredMessage(jid: string, messageId: string) {
+    jid = this.contactCache.canonicalJid(jid)
+    const chat = this.chats.get(jid)
+    const wasLast = Boolean(chat && chat.lastMessageId === messageId)
+    await this.messageStore.removeStoredMessage(jid, messageId)
+    if (wasLast && chat) {
+      const remaining = [...(this.messages.get(jid) || [])].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+      const last = remaining[remaining.length - 1]
+      if (last) {
+        // Point the chat at the new last message; updateChatFromEditedMessage
+        // only rewrites the preview when the id matches the chat's lastMessageId.
+        chat.lastMessageId = last.id
+        this.chatStore.updateChatFromEditedMessage(jid, last)
+      } else {
+        chat.lastMessage = ''
+        chat.lastMessageId = undefined
+        chat.lastMessageFromMe = undefined
+        chat.lastMessageStatus = undefined
+        chat.lastMessageReceipt = undefined
+        chat.lastMessageUserReceipt = undefined
+        this.persistChat(chat)
+        this.events.emit('event', { type: 'chat', bot: this.authKey, chat })
+      }
+    }
+    this.events.emit('event', { type: 'message-remove', bot: this.authKey, jid, id: messageId })
+    return { id: messageId, jid }
   }
 
   async reactMessage(jid: string, messageId: string, emoji: string) {
@@ -1705,6 +1748,11 @@ export class Bot {
     return protocol?.type === 0 || protocol?.type === 'REVOKE'
   }
 
+  /**
+   * "Delete for everyone" (a revoke) keeps a tombstone in the group — the
+   * message stays, flagged deleted, exactly as WhatsApp shows it. Local
+   * deletes ("delete for me") are removed entirely via `messages.delete`.
+   */
   deletedMessagePatch(msg: WAMessage): { jid: string; id: string; patch: MessagePatch } | undefined {
     const protocol = getMessageContent(msg.message)?.protocolMessage
     if (!this.isRevokeProtocol(protocol) || !protocol?.key?.id) return
@@ -2101,6 +2149,8 @@ export class Bot {
         if (!jid || !item.key.id) continue
         const patch: MessagePatch = { ...(item.update as Record<string, any>) }
         let replacementMessage: WAMessage | undefined
+        // Revoke (delete for everyone) arrives here as message:null + a REVOKE
+        // stub — keep a tombstone (see deletedMessagePatch).
         if (patch.message === null || patch.messageStubType === 1 || patch.messageStubType === 'REVOKE') {
           patch.deleted = true
           patch.deletedAt = Date.now()
@@ -2137,6 +2187,18 @@ export class Bot {
       // message-receipt.update for groups/status broadcast). Clear the unread
       // badge so reads made on another device sync to every browser.
       this.clearUnreadForDeviceReads(items)
+    })
+
+    // "Delete for me" (a local delete synced across our own devices through app
+    // state) is not a revoke — drop the message from memory and Redis entirely.
+    sock.ev.on('messages.delete', item => {
+      const keys = Array.isArray((item as any)?.keys) ? (item as any).keys : []
+      for (const key of keys) {
+        const jid = this.contactCache.keyRemoteJid(key)
+        if (!jid || !key?.id) continue
+        this.removeStoredMessage(jid, key.id)
+          .catch((err: any) => console.error(`${this.label}: failed removing locally deleted message`, err?.message || err))
+      }
     })
 
     sock.ev.on('message-receipt.update', items => {
@@ -2323,6 +2385,30 @@ export class Bot {
 
     const message = (await this.messageStore.getStoredMessage(jid, messageId)) || { ...stored, transcript }
     return { transcript, posted, readOnly, message: this.publicMessage(message) }
+  }
+
+  /**
+   * Edit a previously sent (fromMe) text message. WhatsApp's edit is sent as
+   * `{ edit: key, text }`; the stored message is patched with the new text and
+   * `edited: true` so every browser updates live.
+   */
+  async editMessage(jid: string, messageId: string, text: string) {
+    jid = this.contactCache.canonicalJid(jid)
+    const nextText = String(text ?? '').trim()
+    if (!nextText) throw new Error('אין טקסט לעריכה')
+    const stored = await this.messageStore.getStoredMessage(jid, messageId)
+    if (!stored) throw new Error('ההודעה לא נמצאה')
+    if (!stored.fromMe) throw new Error('אפשר לערוך רק הודעות שנשלחו')
+    if (!stored.text) throw new Error('אין טקסט לעריכה')
+    // WhatsApp rejects edits past its window and Baileys does not surface that —
+    // refuse locally instead of sending and then corrupting local history.
+    if (!isMessageEditable(stored)) throw new Error('אפשר לערוך הודעה רק עד 15 דקות משליחתה')
+    if (!this.sock) throw new Error('החיבור לא פעיל')
+    const key = { ...(stored.key || {}), remoteJid: jid, id: messageId, fromMe: true } as WAMessageKey
+    await this.sock.sendMessage(jid, { text: nextText, edit: key })
+    this.updateStoredMessage(jid, messageId, { text: nextText, edited: true })
+    const message = (await this.messageStore.getStoredMessage(jid, messageId)) || { ...stored, text: nextText, edited: true }
+    return { message: this.publicMessage(message) }
   }
 
   async handleAudioTranscription(msg: any) {

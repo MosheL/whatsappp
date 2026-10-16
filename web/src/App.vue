@@ -11,7 +11,7 @@ import {
 import {
   hasLinkCandidate, linkPreviewHref, linkPreviewHost, linkPreviewImageStyle, messagePreview
 } from './message-renderer.js'
-import { messageStatusRank, mergeMessagePatch, reactionUserKey } from '../../src/message-utils.ts'
+import { messageStatusRank, mergeMessagePatch, reactionUserKey, isMessageEditable } from '../../src/message-utils.ts'
 import { buildContactVcard, looksLikeLidNumber } from '../../src/contact-vcard.ts'
 import ChatList from './ChatList.vue'
 import ChatThread from './ChatThread.vue'
@@ -57,7 +57,14 @@ const forwardTargetJid = ref('')
 const forwardSearch = ref('')
 const actionMessageId = ref('')
 const reactionMessageId = ref('')
+// Message under the pointer — target for the Delete / Shift+Delete shortcut.
+const hoveredMessageId = ref('')
 const replyTo = ref(null)
+const editingMessage = ref(null)
+const editText = ref('')
+const editError = ref('')
+const editBusy = ref(false)
+const editTextAreaRef = ref(null)
 const emojiPanelOpen = ref(false)
 const busy = ref(false)
 const composerLinkPreview = ref(null)
@@ -440,6 +447,10 @@ async function handleSocketEvent(data) {
     }
     if (data.type === 'message-update' && data.bot === selectedBot.value && data.jid === selectedChat.value) {
       messages.value = messages.value.map(message => message.id === data.id ? mergeMessagePatch(message, data.patch) : message)
+    }
+    if (data.type === 'message-remove' && data.bot === selectedBot.value && data.jid === selectedChat.value) {
+      messages.value = messages.value.filter(message => message.id !== data.id)
+      if (editingMessage.value?.id === data.id) closeEdit()
     }
     if (data.type === 'message' && data.bot === selectedBot.value) {
       upsertChat(data.chat)
@@ -978,6 +989,32 @@ function onThreadClick() {
   }
 }
 
+async function saveEdit() {
+  const target = editingMessage.value
+  if (!target?.id || editBusy.value) return
+  const nextText = editText.value.trim()
+  if (!nextText) return
+  const bot = selectedBot.value
+  const outgoingChat = target.jid || selectedChat.value
+  editBusy.value = true
+  editError.value = ''
+  try {
+    const data = await api('/api/edit-message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bot, jid: outgoingChat, id: target.id, text: nextText })
+    })
+    // Only reflect the result on the currently visible thread; the server also
+    // emits message-update for every client.
+    if (selectedBot.value === bot && selectedChat.value === outgoingChat && data.message) updateMessage(data.message)
+    if (editingMessage.value?.id === target.id) closeEdit()
+  } catch (err) {
+    editError.value = err.message
+  } finally {
+    editBusy.value = false
+  }
+}
+
 async function sendText() {
   if (!selectedChat.value || !text.value.trim() || showUploadModal.value || isReadOnly.value) return
   replaceTextEmojis()
@@ -1168,7 +1205,35 @@ const forwardableChats = computed(() => {
   ).slice(0, 50)
 })
 
+function startEdit(message) {
+  if (!message?.id || !isMessageEditable(message)) return
+  editingMessage.value = message
+  editText.value = message.text || ''
+  editError.value = ''
+  actionMessageId.value = ''
+  reactionMessageId.value = ''
+  emojiPanelOpen.value = false
+  nextTick(() => {
+    editTextAreaRef.value?.focus()
+    const end = editText.value.length
+    editTextAreaRef.value?.setSelectionRange(end, end)
+  })
+}
+
+function closeEdit() {
+  editingMessage.value = null
+  editText.value = ''
+  editError.value = ''
+  editBusy.value = false
+}
+
+// Editing targets a single message, so dropping it on chat switch is safest.
+watch(selectedChat, () => {
+  closeEdit()
+})
+
 function replyMessage(message) {
+  closeEdit()
   replyTo.value = message
   actionMessageId.value = ''
   reactionMessageId.value = ''
@@ -1208,18 +1273,25 @@ async function replyPrivate(message) {
   replyTo.value = message
 }
 
-async function deleteMessage(message) {
+async function deleteMessage(message, options = {}) {
   if (!selectedChat.value || !message?.id || message.deleted) return
   actionMessageId.value = ''
   reactionMessageId.value = ''
   error.value = ''
+  const chatJid = message.jid || selectedChat.value
+  const local = Boolean(options.local)
   try {
     const data = await api('/api/delete-message', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bot: selectedBot.value, jid: selectedChat.value, id: message.id })
+      body: JSON.stringify({ bot: selectedBot.value, jid: chatJid, id: message.id, local })
     })
-    messages.value = messages.value.map(item => item.id === message.id ? mergeMessagePatch(item, data.patch || { deleted: true }) : item)
+    if (selectedChat.value === chatJid) {
+      // Remote delete keeps a tombstone; a local delete removes it entirely.
+      if (data.patch) messages.value = messages.value.map(item => item.id === message.id ? mergeMessagePatch(item, data.patch) : item)
+      else messages.value = messages.value.filter(item => item.id !== message.id)
+    }
+    if (editingMessage.value?.id === message.id) closeEdit()
   } catch (err) {
     error.value = err.message
   }
@@ -1486,6 +1558,8 @@ function closeUploadModal() {
 }
 
 function onKeydown(event) {
+  // The edit popup owns Escape while it is open.
+  if (event.key === 'Escape' && editingMessage.value) { closeEdit(); return }
   if (event.key === 'Escape' && showUploadModal.value) closeUploadModal()
   if (event.key === 'Escape') {
     actionMessageId.value = ''
@@ -1495,6 +1569,17 @@ function onKeydown(event) {
   }
   const target = event.target
   const isEditing = target?.matches?.('input, textarea, select, [contenteditable="true"]')
+  // Delete the targeted message (hovered, or with its action menu open):
+  // Delete = for everyone (remote), Shift+Delete = for me (local only).
+  const deleteTargetId = actionMessageId.value || hoveredMessageId.value
+  if (event.key === 'Delete' && !isEditing && deleteTargetId) {
+    const message = messages.value.find(item => item.id === deleteTargetId)
+    if (message && !message.deleted) {
+      event.preventDefault()
+      deleteMessage(message, { local: event.shiftKey })
+      return
+    }
+  }
   // If the user has an active (non-collapsed) text selection in the thread,
   // don't hijack keystrokes: typing here would collapse the selection and the
   // Ctrl+C (browser copy) would then have nothing to copy. Let default
@@ -1773,6 +1858,8 @@ onUnmounted(() => {
         @message-update="updateMessage"
         @select-chat="selectChat"
         @button-reply="sendButtonReply"
+        @edit-message="startEdit"
+        @hover-message="hoveredMessageId = $event"
         @error="error = $event"
       />
 
@@ -1859,6 +1946,41 @@ onUnmounted(() => {
   <Teleport to="body">
     <SearchPopup v-if="showSearchPopup" :selected-bot="selectedBot" :current-chat="selectedChat" @close="showSearchPopup = false" />
     <ChatInfoPopup v-if="showChatInfo && currentChat" :selected-bot="selectedBot" :chat="currentChat" :participants="groupParticipants" :contacts="contacts" @close="showChatInfo = false" @refresh-participants="loadGroupParticipants(selectedBot, selectedChat)" @leave-group="leaveGroup" @chat-changed="loadChats" />
+  </Teleport>
+
+  <Teleport to="body">
+    <Transition name="modal">
+      <div
+        v-if="editingMessage"
+        class="modal-mask edit-modal-mask"
+        role="dialog"
+        aria-modal="true"
+        @mousedown.self="closeEdit"
+      >
+        <section class="modal-wrapper edit-window" @mousedown.stop>
+          <header class="modal-header">
+            <strong>עריכת הודעה</strong>
+            <button type="button" class="modal-close" title="סגור" @click="closeEdit">×</button>
+          </header>
+          <form class="modal-body edit-form" @submit.prevent="saveEdit">
+            <textarea
+              ref="editTextAreaRef"
+              v-model="editText"
+              class="edit-textarea"
+              rows="4"
+              dir="auto"
+              placeholder="הודעה"
+              @keydown.esc.stop.prevent="closeEdit"
+            ></textarea>
+            <p v-if="editError" class="error">{{ editError }}</p>
+            <div class="edit-actions">
+              <button type="button" class="light-button" :disabled="editBusy" @click="closeEdit">בטל</button>
+              <button type="submit" :disabled="editBusy || !editText.trim()">{{ editBusy ? 'שומר...' : 'שמור' }}</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </Transition>
   </Teleport>
 
   <Teleport to="body">

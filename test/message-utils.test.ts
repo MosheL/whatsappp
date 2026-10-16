@@ -1,6 +1,20 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mergeMessagePatch } from '../src/message-utils.ts'
+import { mergeMessagePatch, isMessageEditable, MESSAGE_EDIT_WINDOW_MS } from '../src/message-utils.ts'
+
+test('isMessageEditable only allows recent outgoing text messages', () => {
+  const now = 1_700_000_000_000
+  const base = { fromMe: true, deleted: false, text: 'hi', timestamp: now - 1000 }
+  assert.equal(isMessageEditable(base, now), true)
+  // On the window boundary it is still editable; one ms past it is not.
+  assert.equal(isMessageEditable({ ...base, timestamp: now - MESSAGE_EDIT_WINDOW_MS }, now), true)
+  assert.equal(isMessageEditable({ ...base, timestamp: now - MESSAGE_EDIT_WINDOW_MS - 1 }, now), false)
+  assert.equal(isMessageEditable({ ...base, fromMe: false }, now), false)
+  assert.equal(isMessageEditable({ ...base, deleted: true }, now), false)
+  assert.equal(isMessageEditable({ ...base, text: '' }, now), false)
+  assert.equal(isMessageEditable({ ...base, timestamp: 0 }, now), false)
+  assert.equal(isMessageEditable(null, now), false)
+})
 
 test('does not regress message delivery status during duplicate upserts', () => {
   const existing: any = { id: 'message', status: 'read', userReceipt: [{ userJid: 'one', readTimestamp: 1 }] }

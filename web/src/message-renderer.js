@@ -297,11 +297,12 @@ export function reactionUserKey(reaction) {
 }
 
 /**
- * Format message text with bold, strikethrough, links, emails and mentions.
+ * Format message text with bold, monospace, strikethrough, links, emails and mentions.
  *
  * Inline markers:
- *   *text*  → bold
- *   ~text~  → strikethrough (renders as <del>)
+ *   *text*      → bold
+ *   ~text~      → strikethrough (renders as <del>)
+ *   ```text```  → monospace (renders as <code>); content is literal
  *
  * Auto-detected:
  *   https://… / www.…                     → http(s) link
@@ -320,22 +321,39 @@ function formatInlineText(textValue, bold, strike) {
   let cursor = 0
 
   while (cursor < textValue.length) {
+    const nextMono = textValue.indexOf('```', cursor)
     const nextStar = textValue.indexOf('*', cursor)
     const nextTilde = textValue.indexOf('~', cursor)
 
     let open = -1
     let marker = ''
-    if (nextStar >= 0 && (nextTilde < 0 || nextStar < nextTilde)) {
-      open = nextStar
-      marker = '*'
-    } else if (nextTilde >= 0) {
-      open = nextTilde
-      marker = '~'
-    }
-
-    if (open < 0) {
+    // The earliest marker wins; on a tie the code fence wins so ```` ```*x*``` ````
+    // keeps the stars literal instead of treating them as bold.
+    const candidates = [
+      { index: nextMono, marker: '```' },
+      { index: nextStar, marker: '*' },
+      { index: nextTilde, marker: '~' }
+    ].filter(candidate => candidate.index >= 0)
+    if (!candidates.length) {
       tokens.push(...linkifyText(textValue.slice(cursor), bold, strike))
       break
+    }
+    candidates.sort((a, b) => a.index - b.index || (a.marker === '```' ? -1 : 1))
+    open = candidates[0].index
+    marker = candidates[0].marker
+
+    if (marker === '```') {
+      const close = textValue.indexOf('```', open + 3)
+      const inner = close < 0 ? '' : textValue.slice(open + 3, close)
+      if (close < 0 || !inner.trim()) {
+        tokens.push(...linkifyText(textValue.slice(cursor), bold, strike))
+        break
+      }
+      tokens.push(...linkifyText(textValue.slice(cursor, open), bold, strike))
+      // Monospace content is literal — no nested bold/strike/link parsing.
+      tokens.push({ type: 'mono', text: inner, bold, strike })
+      cursor = close + 3
+      continue
     }
 
     // If we're already inside this marker type, the new occurrence is literal text.
@@ -474,6 +492,9 @@ function renderTokens(tokens) {
       if (token.type === 'mention') {
         const text = wrapInline(escapeHtml(token.text), token.bold, token.strike)
         return `<a href="#mention-${escapeHtml(token.jid)}" class="mention-link" data-jid="${escapeHtml(token.jid)}">${text}</a>`
+      }
+      if (token.type === 'mono') {
+        return wrapInline(`<code class="mono">${escapeHtml(token.text)}</code>`, token.bold, token.strike)
       }
       return wrapInline(escapeHtml(token.text), token.bold, token.strike)
     })()

@@ -292,6 +292,14 @@ export type WsEventMessageUpdate = {
   patch: MessagePatch
 }
 
+/** A message was deleted (revoked) and removed from the store entirely. */
+export type WsEventMessageRemove = {
+  type: 'message-remove'
+  bot: string
+  jid: string
+  id: string
+}
+
 export type WsEventRefresh = {
   type: 'refresh'
   bot: string
@@ -303,6 +311,7 @@ export type WsEventPayload =
   | WsEventChatMerge
   | WsEventMessage
   | WsEventMessageUpdate
+  | WsEventMessageRemove
   | WsEventRefresh
   | { type: 'init'; bots: BotStatus[] }
 

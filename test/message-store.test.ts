@@ -39,6 +39,14 @@ function createRedis(messages: any[] = []) {
           })
           return tx
         },
+        zrem(key: string, ...ids: string[]) {
+          operations.push(() => {
+            const jid = key.replace('index:', '')
+            const list = indexes.get(jid)
+            if (list) indexes.set(jid, list.filter(id => !ids.includes(id)))
+          })
+          return tx
+        },
         del(key: string) {
           operations.push(() => {
             if (key.startsWith('index:')) indexes.delete(key.replace('index:', ''))
@@ -118,6 +126,22 @@ test('getMessages loads the requested amount from Redis and sanitizes messages',
 
   assert.equal(result.length, 400)
   assert.equal('raw' in result[0], false)
+})
+
+test('removeStoredMessage deletes the payload and index entry', async () => {
+  const store = createStore({
+    messages: [
+      { id: 'keep', jid: 'chat', timestamp: 1, text: 'keep' },
+      { id: 'gone', jid: 'chat', timestamp: 2, text: 'gone' }
+    ]
+  })
+
+  assert.equal((await store.getStoredMessages('chat', 10)).length, 2)
+  await store.removeStoredMessage('chat', 'gone')
+
+  const remaining = await store.getStoredMessages('chat', 10)
+  assert.deepEqual(remaining.map(message => message.id), ['keep'])
+  assert.equal(await store.getStoredMessage('chat', 'gone'), undefined)
 })
 
 test('mergeMessageStore moves orphaned messages to the canonical chat', async () => {

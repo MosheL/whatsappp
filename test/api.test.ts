@@ -98,6 +98,32 @@ test('transcribe route returns 404 for an unknown bot', async () => {
   assert.equal(typeof body.error, 'string')
 })
 
+test('edit-message route requires an authenticated session', async () => {
+  const { response, body } = await json('/api/edit-message', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bot: 'bot1', jid: 'x@g.us', id: 'm1', text: 'hi' })
+  })
+  assert.equal(response.status, 401)
+  assert.equal(typeof body.error, 'string')
+})
+
+test('edit-message route rejects missing params and unknown bots', async () => {
+  const cookie = await login()
+  const missing = await json('/api/edit-message', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie },
+    body: JSON.stringify({ bot: 'bot1', jid: 'x@g.us' })
+  })
+  assert.equal(missing.response.status, 404)
+  const unknown = await json('/api/edit-message', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie },
+    body: JSON.stringify({ bot: 'nope', jid: 'x@g.us', id: 'm1', text: 'hi' })
+  })
+  assert.equal(unknown.response.status, 404)
+})
+
 test('returns 400 for invalid JSON', async () => {
   const cookie = await login()
   const { response, body } = await json('/api/sync-messages', {

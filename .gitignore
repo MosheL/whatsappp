@@ -13,3 +13,4 @@ vite.*.log
 DEPLOY.md
 nul
 .npm-cache
+.pi/tasks/*

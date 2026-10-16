@@ -14,6 +14,7 @@ import {
   mediaKindFromMime, isForwardedMessage, linkPreviewHref, linkPreviewHost, linkPreviewImageStyle,
   isInteractiveMessage, isLocationMessage, interactiveTypeLabel, isUnsupportedMessage
 } from './message-renderer.js'
+import { isMessageEditable } from '../../src/message-utils.ts'
 import MessageBubble from './MessageBubble.vue'
 
 // Track typing clear timers per chat JID
@@ -97,7 +98,9 @@ const emit = defineEmits([
   'mention-click',
   'reply-private',
   'forward-message',
-  'button-reply'
+  'button-reply',
+  'edit-message',
+  'hover-message'
 ])
 
 watch(() => props.currentChat?.typing, (typing, oldTyping) => {
@@ -472,6 +475,8 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
       :sent-buttons="sentButtons"
       :transcribing="isTranscribing(message)"
       :actions="bubbleActions"
+      @mouseenter="emit('hover-message', message.id)"
+      @mouseleave="emit('hover-message', '')"
     />
     <!-- Typing indicator under last message -->
     <div v-if="selectedChat" :class="['typing-bubble', { active: currentChat?.typing }]">
@@ -509,8 +514,9 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
       >
         <button type="button" @click="emit('reply-message', actionMessage)">השב</button>
         <button v-if="currentChat?.isGroup && !actionMessage.fromMe" type="button" @click="emit('reply-private', actionMessage)">השב בפרטי</button>
+        <button v-if="isMessageEditable(actionMessage)" type="button" @click="emit('edit-message', actionMessage)">ערוך</button>
         <button type="button" @click="emit('toggle-reaction-menu', actionMessage)">אמוג'י</button>
-        <button type="button" :disabled="actionMessage.deleted" @click="emit('delete-message', actionMessage)">מחק</button>
+        <button type="button" :disabled="actionMessage.deleted" title="מחק לכולם (Shift+Delete למחיקה מקומית)" @click="emit('delete-message', actionMessage)">מחק</button>
         <button type="button" @click="emit('forward-message', actionMessage)">העבר</button>
         <button type="button" @click="copyWithPrefix(actionMessage)">העתק</button>
         <button type="button" @click="copyAllText(actionMessage)">העתק הכל</button>
