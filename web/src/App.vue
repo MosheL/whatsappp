@@ -1274,12 +1274,15 @@ async function replyPrivate(message) {
 }
 
 async function deleteMessage(message, options = {}) {
-  if (!selectedChat.value || !message?.id || message.deleted) return
+  if (!selectedChat.value || !message?.id) return
+  const local = Boolean(options.local)
+  // An already-revoked message cannot be revoked again, but it can still be
+  // removed locally (that is how a "הודעה נמחקה" placeholder goes away).
+  if (message.deleted && !local) return
   actionMessageId.value = ''
   reactionMessageId.value = ''
   error.value = ''
   const chatJid = message.jid || selectedChat.value
-  const local = Boolean(options.local)
   try {
     const data = await api('/api/delete-message', {
       method: 'POST',
@@ -1572,9 +1575,14 @@ function onKeydown(event) {
   // Delete the targeted message (hovered, or with its action menu open):
   // Delete = for everyone (remote), Shift+Delete = for me (local only).
   const deleteTargetId = actionMessageId.value || hoveredMessageId.value
-  if (event.key === 'Delete' && !isEditing && deleteTargetId) {
+  // The composer usually holds focus, so don't gate on `isEditing` when the
+  // message menu is open or Shift is held: Shift+Delete is always a local
+  // message delete, plain Delete only fires when not typing.
+  if (event.key === 'Delete' && deleteTargetId && (actionMessageId.value || !isEditing || event.shiftKey)) {
     const message = messages.value.find(item => item.id === deleteTargetId)
-    if (message && !message.deleted) {
+    // Plain Delete is a remote revoke (meaningless on a deleted message);
+    // Shift+Delete is a local removal and works on tombstones too.
+    if (message && (event.shiftKey || !message.deleted)) {
       event.preventDefault()
       deleteMessage(message, { local: event.shiftKey })
       return

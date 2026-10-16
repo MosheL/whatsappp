@@ -103,7 +103,10 @@ WhatsApp has two kinds of delete, handled differently:
 - **Delete for everyone** (delete in the group) keeps a **tombstone**: the message stays, flagged `deleted` (`deletedAt` / `deletedBy`), and renders as **הודעה נמחקה**. It arrives as a `protocolMessage` REVOKE upsert (`bot.deletedMessagePatch()`) or as a `messages.update` entry with `message: null` / `messageStubType: 'REVOKE'` (the usual path on linked devices). Both go through `updateStoredMessage()`.
 - **Delete for me** (delete locally, synced across our own devices through app state) is **removed entirely** from memory and Redis. Baileys emits a `messages.delete` event; `bot.removeStoredMessage()` drops the in-memory entry, the Redis payload, the timestamp index and the cached media, recomputes the chat preview when it was the last message, and emits a `message-remove` WebSocket event so open clients splice it out of the thread.
 
-In the UI, the bubble menu's **מחק** deletes for everyone (revoke + local tombstone, as WhatsApp shows it). **Shift+Delete** on the hovered message (or the one whose action menu is open) deletes it locally only — `POST /api/delete-message` with `{ local: true }` — removing it from memory and Redis with no revoke.
+In the UI, the bubble menu's **מחק** deletes for everyone (revoke + local tombstone, as WhatsApp shows it). A local delete — `POST /api/delete-message` with `{ local: true }`, removing it from memory and Redis with no revoke — is available two ways:
+
+- **Shift+click** the **מחק** button, or press **Shift+Delete** on the hovered message / the one whose action menu is open.
+- For a message that is already a tombstone, the button becomes **הסר** and a plain click removes the placeholder locally (a remote revoke would be meaningless).
 
 #### Interactive messages
 WhatsApp Cloud API / native-flow interactive messages (templates, buttons, lists, and `interactiveMessage`) are parsed by `message-processor.ts → messageInteractiveData()` into an `InteractiveData` block on the `UiMessage`, and rendered by `ChatThread.vue` with clickable buttons. Native-flow buttons carry their payload as a `buttonParamsJson` JSON string; the parser decodes it per button type:

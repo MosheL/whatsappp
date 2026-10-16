@@ -516,7 +516,11 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
         <button v-if="currentChat?.isGroup && !actionMessage.fromMe" type="button" @click="emit('reply-private', actionMessage)">השב בפרטי</button>
         <button v-if="isMessageEditable(actionMessage)" type="button" @click="emit('edit-message', actionMessage)">ערוך</button>
         <button type="button" @click="emit('toggle-reaction-menu', actionMessage)">אמוג'י</button>
-        <button type="button" :disabled="actionMessage.deleted" title="מחק לכולם (Shift+Delete למחיקה מקומית)" @click="emit('delete-message', actionMessage)">מחק</button>
+        <button
+          type="button"
+          :title="actionMessage.deleted ? 'הסר מהמכשיר' : 'מחק לכולם (Shift+לחיצה = מחיקה מקומית)'"
+          @click="emit('delete-message', actionMessage, { local: actionMessage.deleted || $event.shiftKey })"
+        >{{ actionMessage.deleted ? 'הסר' : 'מחק' }}</button>
         <button type="button" @click="emit('forward-message', actionMessage)">העבר</button>
         <button type="button" @click="copyWithPrefix(actionMessage)">העתק</button>
         <button type="button" @click="copyAllText(actionMessage)">העתק הכל</button>
