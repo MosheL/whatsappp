@@ -392,6 +392,7 @@ const fullTime = computed(() => formatDateFull(props.message.timestamp))
             v-for="reaction in messageReactions(message)"
             :key="reactionUserKey(reaction)"
             type="button"
+            :class="{ mine: isMyReaction(reaction) }"
             :title="isMyReaction(reaction) ? 'מחק תגובה' : reaction.sender"
             @click="emit('react', message, reaction.text)"
           >
