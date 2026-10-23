@@ -17,6 +17,13 @@ import ChatList from './ChatList.vue'
 import ChatThread from './ChatThread.vue'
 import SearchPopup from './SearchPopup.vue'
 import ChatInfoPopup from './ChatInfoPopup.vue'
+import Toaster from './Toaster.vue'
+import UploadModal from './UploadModal.vue'
+import ForwardPopup from './ForwardPopup.vue'
+import EditPopup from './EditPopup.vue'
+import ContactPickerModal from './ContactPickerModal.vue'
+import Toast from './toast.js'
+import { searchEmojiCatalog } from './emoji-catalog.js'
 
 const authenticated = ref(false)
 const password = ref('')
@@ -36,14 +43,11 @@ const avatarCache = {}
 const newJid = ref('')
 const text = ref('')
 const textAreaRef = ref(null)
-const caption = ref('')
-const selectedFile = ref(null)
-const selectedFileForwarded = ref(false)
 // File currently being uploaded: shown as an in-composer "uploading strip"
 // after the modal closes, until the send completes or fails.
 const uploadingFile = ref(null)
 const fileInputRef = ref(null)
-const captionInputRef = ref(null)
+const uploadModalRef = ref(null)
 const draggingFile = ref(false)
 const chatDropJid = ref('')
 const showUploadModal = ref(false)
@@ -51,23 +55,17 @@ const showForwardPopup = ref(false)
 const showContactPicker = ref(false)
 const showSearchPopup = ref(localStorage.getItem('wa-ui-search-open') === 'true')
 const showChatInfo = ref(false)
-const selectedContactForSend = ref(null)
-const contactSearch = ref('')
-const showComposerMenu = ref(false)
 const forwardMessageId = ref('')
 const forwardSourceJid = ref('')
 const forwardTargetJid = ref('')
-const forwardSearch = ref('')
 const actionMessageId = ref('')
 const reactionMessageId = ref('')
 // Message under the pointer — target for the Delete / Shift+Delete shortcut.
 const hoveredMessageId = ref('')
 const replyTo = ref(null)
 const editingMessage = ref(null)
-const editText = ref('')
 const editError = ref('')
 const editBusy = ref(false)
-const editTextAreaRef = ref(null)
 const emojiPanelOpen = ref(false)
 const busy = ref(false)
 const composerLinkPreview = ref(null)
@@ -80,6 +78,10 @@ const loadingChats = ref(false)
 const loadingMessages = ref(false)
 const loadingOlder = ref(false)
 const error = ref('')
+// Surface every error as a toast instead of an inline banner in the composer
+watch(error, value => {
+  if (value) Toast.error(value)
+})
 const qrImages = ref({})
 const threadRef = ref(null)
 let dragHideTimer
@@ -94,7 +96,6 @@ let messageLoadRequest = 0
 let linkPreviewRequest = 0
 const markingRead = new Set()
 
-const { url: selectedFilePreviewUrl, setBlob: setFilePreviewBlob, clearBlob: clearFilePreviewBlob } = useBlob()
 const { url: uploadingPreviewUrl, setBlob: setUploadingPreviewBlob, clearBlob: clearUploadingPreviewBlob } = useBlob()
 
 function loadUsedEmojis() {
@@ -142,9 +143,9 @@ const currentChat = computed(() => chatsById.value.get(selectedChat.value))
 const isReadOnly = computed(() => Boolean(currentChat.value?.readOnly))
 const chatTitle = computed(() => currentChat.value?.name || selectedChat.value || 'בחרו שיחה')
 const chatSubtitle = computed(() => ""/* currentChat.value ? chatAddress(currentChat.value) : selectedChat.value*/)
-const selectedFileName = computed(() => selectedFile.value?.name || '')
-const selectedFileIsImage = computed(() => Boolean(selectedFile.value?.type?.startsWith('image/') && selectedFilePreviewUrl.value))
 const emojis = computed(() => [...new Set([...usedEmojis.value, ...defaultEmojis])].slice(0, 48))
+const emojiSearch = ref('')
+const emojiResults = computed(() => searchEmojiCatalog(emojiSearch.value))
 // Total unread messages across all chats (used by the taskbar badge).
 // Sum the per-chat unread counts rather than counting chats, so the badge
 // reflects the real number of unread messages instead of topping out at the
@@ -216,12 +217,6 @@ function searchableIdentity(value) {
 
 function identityMatches(value, term) {
   return Boolean(term) && searchableIdentity(value).includes(term)
-}
-
-/** Strip WhatsApp identity suffix and return clean digits */
-function cleanPhone(value) {
-  const raw = String(value || '').replace(/@.*$/, '')
-  return raw.replace(/[^\d]/g, '')
 }
 
 function phoneSearchTerms(value) {
@@ -994,11 +989,9 @@ function onThreadClick() {
   }
 }
 
-async function saveEdit() {
+async function saveEdit(nextText) {
   const target = editingMessage.value
-  if (!target?.id || editBusy.value) return
-  const nextText = editText.value.trim()
-  if (!nextText) return
+  if (!target?.id || editBusy.value || !nextText) return
   const bot = selectedBot.value
   const outgoingChat = target.jid || selectedChat.value
   editBusy.value = true
@@ -1120,9 +1113,8 @@ function setReactionMenu(message) {
   reactionMessageId.value = message.id
 }
 
-async function sendContact() {
-  if (!selectedChat.value || !selectedContactForSend.value) return
-  const contact = selectedContactForSend.value
+async function sendContact(contact) {
+  if (!selectedChat.value || !contact) return
   const outgoingJid = activeSendJid()
   const outgoingChat = selectedChat.value
   const outgoingBot = selectedBot.value
@@ -1148,33 +1140,17 @@ async function sendContact() {
 
 function openContactPicker() {
   showContactPicker.value = true
-  contactSearch.value = ''
-  selectedContactForSend.value = null
   actionMessageId.value = ''
 }
 
 function closeContactPicker() {
   showContactPicker.value = false
-  selectedContactForSend.value = null
 }
 
 // Generate a WhatsApp-native vCard for a contact client-side.
 function makeVcard(contact) {
   return buildContactVcard(contact.name, contact.phoneNumber)
 }
-
-const filteredContacts = computed(() => {
-  const term = searchable(contactSearch.value).trim()
-  let list = contacts.value.filter(c => c.phoneNumber && c.name && !looksLikeLidNumber(c.phoneNumber))
-  if (!term) return list.slice(0, 100)
-  return list.filter(c => {
-    const nameMatch = searchable(c.name).includes(term)
-    // Search phone by clean digits (strips @s.whatsapp.net suffix)
-    const phoneClean = cleanPhone(c.phoneNumber)
-    const phoneMatch = phoneClean.includes(term) || term.includes(phoneClean)
-    return nameMatch || phoneMatch
-  }).slice(0, 100)
-})
 
 async function forwardMessage(sourceJid, sourceId, targetJid) {
   if (!sourceJid || !sourceId || !targetJid) return
@@ -1199,7 +1175,6 @@ async function forwardMessage(sourceJid, sourceId, targetJid) {
 function openForwardPopup(message) {
   forwardMessageId.value = message.id
   forwardSourceJid.value = message.jid || selectedChat.value
-  forwardSearch.value = ''
   showForwardPopup.value = true
   actionMessageId.value = ''
 }
@@ -1216,37 +1191,18 @@ function selectForwardTarget(jid) {
   forwardMessage(forwardSourceJid.value, forwardMessageId.value, jid)
 }
 
-const forwardableChats = computed(() => {
-  const term = searchable(forwardSearch.value).trim()
-  const identityTerm = searchableIdentity(forwardSearch.value).trim()
-  const list = orderedChats.value.filter(chat => chat.jid !== selectedChat.value)
-  if (!term) return list.slice(0, 50)
-  return list.filter(chat =>
-    searchable(chat.name).includes(term) ||
-    identityMatches(chat.jid, identityTerm) ||
-    identityMatches(chat.displayJid, identityTerm) ||
-    identityMatches(chat.phoneNumber, identityTerm)
-  ).slice(0, 50)
-})
 
 function startEdit(message) {
   if (!message?.id || !isMessageEditable(message)) return
   editingMessage.value = message
-  editText.value = message.text || ''
   editError.value = ''
   actionMessageId.value = ''
   reactionMessageId.value = ''
   emojiPanelOpen.value = false
-  nextTick(() => {
-    editTextAreaRef.value?.focus()
-    const end = editText.value.length
-    editTextAreaRef.value?.setSelectionRange(end, end)
-  })
 }
 
 function closeEdit() {
   editingMessage.value = null
-  editText.value = ''
   editError.value = ''
   editBusy.value = false
 }
@@ -1347,6 +1303,7 @@ async function reactToMessage(message, emoji) {
 
 function toggleEmojiPanel() {
   emojiPanelOpen.value = !emojiPanelOpen.value
+  showSchedule.value = false
 }
 
 function insertComposerText(value) {
@@ -1430,11 +1387,82 @@ function insertEmoji(emoji) {
   emojiPanelOpen.value = false
 }
 
-async function sendFile() {
-  if (busy.value || !selectedChat.value || !selectedFile.value) return
-  const file = selectedFile.value
-  const captionText = caption.value
-  const forwarded = selectedFileForwarded.value
+// -------- Send later (scheduled messages) --------
+
+const showSchedule = ref(false)
+const scheduleAt = ref('')
+const scheduledList = ref([])
+const scheduling = ref(false)
+
+function toLocalInputValue(date) {
+  const pad = n => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function toggleSchedule() {
+  showSchedule.value = !showSchedule.value
+  emojiPanelOpen.value = false
+  if (showSchedule.value) {
+    scheduleAt.value = toLocalInputValue(new Date(Date.now() + 3600_000))
+    loadScheduled()
+  }
+}
+
+async function loadScheduled() {
+  if (!selectedChat.value) return
+  try {
+    const params = new URLSearchParams({ bot: selectedBot.value, jid: selectedChat.value })
+    const data = await api(`/api/scheduled-messages?${params}`)
+    scheduledList.value = data.messages || []
+  } catch {
+    scheduledList.value = []
+  }
+}
+
+async function scheduleMessage() {
+  if (!selectedChat.value || scheduling.value) return
+  const sendAt = scheduleAt.value ? new Date(scheduleAt.value).getTime() : 0
+  if (!text.value.trim()) {
+    Toast.warning('כתבו הודעה לתיבת הטקסט קודם')
+    return
+  }
+  if (!sendAt || sendAt <= Date.now()) {
+    Toast.warning('בחרו זמן עתידי')
+    return
+  }
+  scheduling.value = true
+  try {
+    await api('/api/schedule-message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bot: selectedBot.value, jid: selectedChat.value, text: text.value, sendAt })
+    })
+    text.value = ''
+    Toast.success('ההודעה תישלח בזמן שנבחר')
+    loadScheduled()
+  } catch (err) {
+    Toast.error(err.message)
+  } finally {
+    scheduling.value = false
+  }
+}
+
+async function cancelScheduled(item) {
+  try {
+    await api('/api/scheduled-cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bot: selectedBot.value, id: item.id })
+    })
+    scheduledList.value = scheduledList.value.filter(entry => entry.id !== item.id)
+  } catch (err) {
+    Toast.error(err.message)
+  }
+}
+
+// Called by the UploadModal when the user confirms sending the staged files.
+async function onFilesSend({ files, caption: captionText, forwarded }) {
+  if (busy.value || !selectedChat.value || !files?.length) return
   const jid = activeSendJid()
   const bot = selectedBot.value
   busy.value = true
@@ -1443,32 +1471,40 @@ async function sendFile() {
   // window: an uploading strip in the composer replaces the modal while the
   // upload runs, so the thread stays visible and interactive.
   showUploadModal.value = false
-  uploadingFile.value = { name: file.name || 'קובץ' }
-  if (file.type?.startsWith('image/')) setUploadingPreviewBlob(file)
-  clearFile()
-  // The composer text was consumed as the file caption
+  uploadingFile.value = { name: files[0].name || 'קובץ', index: 1, total: files.length }
+  if (files[0].type?.startsWith('image/')) setUploadingPreviewBlob(files[0])
+  // The composer text was consumed as the caption of the first file
   text.value = ''
+  const remaining = [...files]
   try {
-    const form = new FormData()
-    form.append('bot', bot)
-    form.append('jid', jid)
-    form.append('caption', captionText)
-    form.append('forwarded', String(forwarded))
-    form.append('file', file)
-    const data = await api('/api/send-file', { method: 'POST', body: form })
-    if (data.message?.jid === selectedChat.value) {
-      upsertMessage(data.message)
-      scrollToBottom(data.message)
+    while (remaining.length) {
+      const file = remaining[0]
+      const form = new FormData()
+      form.append('bot', bot)
+      form.append('jid', jid)
+      // Only the first file carries the caption
+      form.append('caption', remaining.length === files.length ? captionText : '')
+      form.append('forwarded', String(forwarded))
+      form.append('file', file)
+      const data = await api('/api/send-file', { method: 'POST', body: form })
+      if (data.message?.jid === selectedChat.value) {
+        upsertMessage(data.message)
+        scrollToBottom(data.message)
+      }
+      remaining.shift()
+      if (remaining.length) {
+        uploadingFile.value = { name: remaining[0].name || 'קובץ', index: files.length - remaining.length + 1, total: files.length }
+        if (remaining[0].type?.startsWith('image/')) setUploadingPreviewBlob(remaining[0])
+      }
     }
+    Toast.success(files.length > 1 ? `${files.length} קבצים נשלחו` : 'הקובץ נשלח')
   } catch (err) {
     error.value = err.message
-    // Send failed — restore the modal with the same file so it can be retried
-    clearFilePreviewBlob()
-    selectedFile.value = file
-    selectedFileForwarded.value = forwarded
-    if (file.type?.startsWith('image/')) setFilePreviewBlob(file)
-    caption.value = captionText
-    showUploadModal.value = true
+    // Send failed — restore the modal with the files that were not sent yet
+    if (remaining.length) {
+      uploadModalRef.value?.openFiles(remaining, forwarded, remaining.length === files.length ? captionText : '')
+      showUploadModal.value = true
+    }
   } finally {
     uploadingFile.value = null
     clearUploadingPreviewBlob()
@@ -1477,8 +1513,8 @@ async function sendFile() {
 }
 
 function onFile(event) {
-  const file = event.target.files?.[0]
-  if (file) openUploadModal(file)
+  const files = [...(event.target.files || [])]
+  if (files.length) openUploadModal(files)
 }
 
 function showDragOverlay(event) {
@@ -1501,8 +1537,8 @@ function onDropFile(event) {
     error.value = 'הקבוצה לקריאה בלבד — רק מנהלים יכולים לשלוח הודעות'
     return
   }
-  const file = event.dataTransfer?.files?.[0]
-  if (file) openUploadModal(file)
+  const files = [...(event.dataTransfer?.files || [])]
+  if (files.length) openUploadModal(files)
 }
 
 function canDropFileOnChat(event) {
@@ -1570,10 +1606,10 @@ async function onChatDrop(event, jid) {
 
 function onPasteFile(event) {
   if (!selectedChat.value) return
-  const file = [...(event.clipboardData?.files || [])][0]
-  if (!file) return
+  const files = [...(event.clipboardData?.files || [])]
+  if (!files.length) return
   event.preventDefault()
-  openUploadModal(file)
+  openUploadModal(files)
 }
 
 function openUploadPicker() {
@@ -1581,18 +1617,13 @@ function openUploadPicker() {
   fileInputRef.value?.click()
 }
 
+// Accepts a single File or an array of Files
 function openUploadModal(file, forwarded = false) {
   if (!selectedChat.value) return
-  if (file) {
-    clearFilePreviewBlob()
-    selectedFile.value = file
-    selectedFileForwarded.value = forwarded
-    if (file.type?.startsWith('image/')) setFilePreviewBlob(file)
-  }
-  // Pre-fill caption with the current text from the composer input
-  caption.value = text.value
+  const files = Array.isArray(file) ? file : (file ? [file] : [])
+  // Pre-fill the caption with the current text from the composer input
+  uploadModalRef.value?.openFiles(files, forwarded, text.value)
   showUploadModal.value = true
-  nextTick(() => captionInputRef.value?.focus())
 }
 
 function closeUploadModal() {
@@ -1608,6 +1639,7 @@ function onKeydown(event) {
     reactionMessageId.value = ''
     replyTo.value = null
     emojiPanelOpen.value = false
+    showSchedule.value = false
   }
   const target = event.target
   const isEditing = target?.matches?.('input, textarea, select, [contenteditable="true"]')
@@ -1638,14 +1670,6 @@ function onKeydown(event) {
     insertComposerText(event.key)
     if (event.key === ' ') nextTick(replaceTextEmojis)
   }
-}
-
-function clearFile() {
-  clearFilePreviewBlob()
-  selectedFile.value = null
-  selectedFileForwarded.value = false
-  caption.value = ''
-  if (fileInputRef.value) fileInputRef.value.value = ''
 }
 
 function scrollToBottom(message) {
@@ -1685,28 +1709,54 @@ function updateAppBadge(count) {
 /** Generate a favicon SVG data URL with a red badge overlay showing the unread count.
  *  Uses inline SVG markup so it works in all browsers without canvas/image loading issues.
  */
-function updateFaviconBadge(count) {
-  const link = document.querySelector('link[rel="icon"]')
-  if (!link) return
+/** Generate a favicon PNG (canvas-drawn) with a red badge overlay showing the
+ *  unread count. Drawn at 64px so the badge stays readable at 16px tab size;
+ *  the base /favicon.svg is rasterized once and reused. */
+let faviconBaseImage = null
 
-  if (count > 0) {
-    link.setAttribute('href', generateBadgeSvg(count))
-  } else {
-    link.setAttribute('href', '/favicon.svg')
-  }
+function loadFaviconBase() {
+  return new Promise(resolve => {
+    if (faviconBaseImage) return resolve(faviconBaseImage)
+    const img = new Image()
+    img.onload = () => { faviconBaseImage = img; resolve(img) }
+    img.onerror = () => resolve(null)
+    img.src = '/favicon.svg'
+  })
 }
 
-/** Generate an inline SVG data URL that overlays a red badge on the WhatsApp favicon */
-function generateBadgeSvg(count) {
-  const text = count > 99 ? '99+' : String(count)
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-    <rect width="64" height="64" rx="14" fill="#166a5b"/>
-    <path fill="#fff" d="M31.5 12C20.2 12 11 20.4 11 30.8c0 3.7 1.2 7.2 3.3 10.2L12 52l11.6-3c2.5 1 5.2 1.6 7.9 1.6C42.8 50.6 52 42.2 52 31.8S42.8 12 31.5 12Z" opacity=".96"/>
-    <path fill="#166a5b" d="M42.8 37.4c-.5 1.4-2.6 2.5-3.8 2.6-1 .1-2.3.1-3.8-.5-3.3-1.1-7.2-3.9-10-7.5-2.5-3.1-3.3-5.8-3.4-6.7-.2-1.4.4-3.2 1.8-4.1.5-.3 1.2-.3 1.6-.3h1.1c.4 0 .8.1 1.1.9.4 1 .9 2.4 1 2.6.1.3.2.7 0 1-.2.4-.3.5-.6.8l-.7.8c-.2.2-.5.5-.2 1 .3.6 1.4 2.2 2.9 3.5 2 1.7 3.6 2.3 4.2 2.6.5.2.8.2 1.1-.1.3-.4 1.3-1.4 1.6-1.9.4-.5.7-.4 1.2-.3.5.2 3.1 1.4 3.6 1.7.5.2.9.4 1 .7.2.4.2 1.8-.3 3.2Z"/>
-    <circle cx="50" cy="14" r="14" fill="#ff0000"/>
-    <text x="50" y="17" fill="#fff" font-size="12" font-weight="bold" text-anchor="middle" font-family="sans-serif">${text}</text>
-  </svg>`
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`
+async function updateFaviconBadge(count) {
+  const link = document.querySelector('link[rel="icon"]')
+  if (!link) return
+  const img = await loadFaviconBase()
+  const canvas = document.createElement('canvas')
+  canvas.width = 64
+  canvas.height = 64
+  const ctx = canvas.getContext('2d')
+  if (img) {
+    ctx.drawImage(img, 0, 0, 64, 64)
+  } else {
+    // Fallback base if the SVG could not be rasterized
+    ctx.fillStyle = '#166a5b'
+    ctx.beginPath()
+    ctx.roundRect(0, 0, 64, 64, 14)
+    ctx.fill()
+  }
+  if (count > 0) {
+    ctx.fillStyle = '#e53935'
+    ctx.beginPath()
+    ctx.arc(48, 48, 16, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 2.5
+    ctx.stroke()
+    const text = count > 99 ? '99+' : String(count)
+    ctx.fillStyle = '#ffffff'
+    ctx.font = `bold ${text.length > 2 ? 13 : 17}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(text, 48, 49)
+  }
+  link.setAttribute('href', canvas.toDataURL('image/png'))
 }
 
 watch(selectedChat, (jid) => { avatarLoaded.value = avatarCache[jid] === true })
@@ -1945,7 +1995,7 @@ onUnmounted(() => {
           <span v-else class="uploading-icon" aria-hidden="true">📎</span>
           <div class="uploading-copy">
             <strong>{{ uploadingFile.name }}</strong>
-            <small><span class="spinner" aria-hidden="true"></span> שולח קובץ…</small>
+            <small><span class="spinner" aria-hidden="true"></span> שולח קובץ…<span v-if="uploadingFile.total > 1"> ({{ uploadingFile.index }}/{{ uploadingFile.total }})</span></small>
           </div>
         </div>
         <div v-if="replyTo" class="reply-strip">
@@ -1963,8 +2013,9 @@ onUnmounted(() => {
             <button class="action-button emoji-action" type="button" :disabled="!selectedChat || isReadOnly" title="אימוג׳י" @click.stop="toggleEmojiPanel">
               ☺
             </button>
+            <button class="action-button" type="button" :disabled="!selectedChat || isReadOnly" title="שליחה מאוחרת" @click.stop="toggleSchedule">⏰</button>
           </div>
-          <input ref="fileInputRef" class="hidden-file-input" type="file" @change="onFile" />
+          <input ref="fileInputRef" class="hidden-file-input" type="file" multiple @change="onFile" />
           <textarea
             ref="textAreaRef"
             v-model="text"
@@ -1993,9 +2044,35 @@ onUnmounted(() => {
     </section>
   </main>
 
+  <Toaster />
+
+  <Teleport to="body">
+    <div v-if="showSchedule" class="schedule-panel" @mousedown.stop @click.stop>
+      <strong class="schedule-title">שליחה מאוחרת</strong>
+      <input v-model="scheduleAt" class="schedule-input" type="datetime-local" :min="toLocalInputValue(new Date())" />
+      <button type="button" class="light-button schedule-send" :disabled="scheduling" @click="scheduleMessage">{{ scheduling ? 'שומר…' : 'שלח מאוחר יותר' }}</button>
+      <div v-if="scheduledList.length" class="schedule-list">
+        <div v-for="item in scheduledList" :key="item.id" class="schedule-item">
+          <div class="schedule-item-copy">
+            <span dir="auto">{{ item.text }}</span>
+            <small>{{ formatDateFull(item.sendAt) }}</small>
+          </div>
+          <button type="button" class="schedule-cancel" title="בטל" @click="cancelScheduled(item)">×</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
   <Teleport to="body">
     <div v-if="emojiPanelOpen" class="emoji-panel" @mousedown.stop @click.stop>
-      <button v-for="emoji in emojis" :key="emoji" type="button" @click="insertEmoji(emoji)">{{ emoji }}</button>
+      <input v-model="emojiSearch" class="emoji-search" type="search" placeholder="חיפוש אימוג׳י…" />
+      <template v-if="emojiSearch.trim()">
+        <button v-for="entry in emojiResults" :key="entry.emoji" type="button" :title="entry.name" @click="insertEmoji(entry.emoji)">{{ entry.emoji }}</button>
+        <small v-if="!emojiResults.length" class="emoji-empty">אין תוצאות</small>
+      </template>
+      <template v-else>
+        <button v-for="emoji in emojis" :key="emoji" type="button" @click="insertEmoji(emoji)">{{ emoji }}</button>
+      </template>
     </div>
   </Teleport>
 
@@ -2004,157 +2081,38 @@ onUnmounted(() => {
     <ChatInfoPopup v-if="showChatInfo && currentChat" :selected-bot="selectedBot" :chat="currentChat" :participants="groupParticipants" :contacts="contacts" @close="showChatInfo = false" @refresh-participants="loadGroupParticipants(selectedBot, selectedChat)" @leave-group="leaveGroup" @chat-changed="loadChats" />
   </Teleport>
 
-  <Teleport to="body">
-    <Transition name="modal">
-      <div
-        v-if="editingMessage"
-        class="modal-mask edit-modal-mask"
-        role="dialog"
-        aria-modal="true"
-        @mousedown.self="closeEdit"
-      >
-        <section class="modal-wrapper edit-window" @mousedown.stop>
-          <header class="modal-header">
-            <strong>עריכת הודעה</strong>
-            <button type="button" class="modal-close" title="סגור" @click="closeEdit">×</button>
-          </header>
-          <form class="modal-body edit-form" @submit.prevent="saveEdit">
-            <textarea
-              ref="editTextAreaRef"
-              v-model="editText"
-              class="edit-textarea"
-              rows="4"
-              dir="auto"
-              placeholder="הודעה"
-              @keydown.esc.stop.prevent="closeEdit"
-            ></textarea>
-            <p v-if="editError" class="error">{{ editError }}</p>
-            <div class="edit-actions">
-              <button type="button" class="light-button" :disabled="editBusy" @click="closeEdit">בטל</button>
-              <button type="submit" :disabled="editBusy || !editText.trim()">{{ editBusy ? 'שומר...' : 'שמור' }}</button>
-            </div>
-          </form>
-        </section>
-      </div>
-    </Transition>
-  </Teleport>
+  <EditPopup
+    :message="editingMessage"
+    :busy="editBusy"
+    :error="editError"
+    @close="closeEdit"
+    @save="saveEdit"
+  />
 
-  <Teleport to="body">
-    <Transition name="modal">
-      <div
-        v-if="showUploadModal"
-        class="modal-mask upload-modal-mask"
-        role="dialog"
-        aria-modal="true"
-        @mousedown.self="closeUploadModal"
-      >
-        <section class="modal-wrapper upload-window" @mousedown.stop @keydown.enter.exact.prevent="sendFile">
-          <header class="modal-header">
-            <strong>שליחת קובץ</strong>
-            <button type="button" class="modal-close" title="סגור" @click="closeUploadModal">×</button>
-          </header>
-          <form class="modal-body upload-form" @submit.prevent="sendFile">
-            <div
-              class="upload-dropzone"
-              @dragover.prevent
-              @drop.prevent="onDropFile"
-            >
-              <img v-if="selectedFileIsImage" class="upload-preview-image" :src="selectedFilePreviewUrl" alt="" />
-              <strong>{{ selectedFileName || 'גרור קובץ לכאן' }}</strong>
-              <small>אפשר גם להדביק מהלוח או לבחור קובץ</small>
-              <button type="button" class="light-button" @click="openUploadPicker">בחר קובץ</button>
-            </div>
-            <input ref="captionInputRef" v-model="caption" class="caption-input" placeholder="כיתוב לקובץ" />
-            <div class="upload-actions">
-              <button type="button" class="light-button" :disabled="!selectedFile" @click="clearFile">נקה</button>
-              <button type="submit" :disabled="busy || !selectedFile || !selectedChat">שלח</button>
-            </div>
-          </form>
-        </section>
-      </div>
-    </Transition>
-  </Teleport>
+  <UploadModal
+    ref="uploadModalRef"
+    :open="showUploadModal"
+    :busy="busy"
+    :chat-selected="Boolean(selectedChat)"
+    @close="closeUploadModal"
+    @send="onFilesSend"
+  />
 
-  <Teleport to="body">
-    <Transition name="modal">
-      <div
-        v-if="showForwardPopup"
-        class="modal-mask forward-modal-mask"
-        role="dialog"
-        aria-modal="true"
-        @mousedown.self="closeForwardPopup"
-      >
-        <section class="modal-wrapper forward-window" @mousedown.stop>
-          <header class="modal-header">
-            <strong>העבר הודעה ל...</strong>
-            <button type="button" class="modal-close" title="סגור" @click="closeForwardPopup">×</button>
-          </header>
-          <div class="modal-body forward-list">
-            <input v-model="forwardSearch" class="forward-search" placeholder="חיפוש שיחה" />
-            <div class="forward-items">
-              <button
-                v-for="chat in forwardableChats"
-                :key="chat.jid"
-                class="forward-item"
-                type="button"
-                @click="selectForwardTarget(chat.jid)"
-              >
-                <span class="forward-item-avatar">
-                  <span class="avatar">{{ initials(chat) }}</span>
-                </span>
-                <span class="forward-item-name">{{ chat.name }}</span>
-                <small class="forward-item-jid">{{ chat.displayJid || chat.phoneNumber || '' }}</small>
-              </button>
-              <p v-if="!forwardableChats.length" class="empty-list">אין שיחות להצגה</p>
-            </div>
-          </div>
-        </section>
-      </div>
-    </Transition>
-  </Teleport>
+  <ForwardPopup
+    :open="showForwardPopup"
+    :chats="orderedChats"
+    :exclude-jid="selectedChat"
+    @close="closeForwardPopup"
+    @select="selectForwardTarget"
+  />
 
-  <Teleport to="body">
-    <Transition name="modal">
-      <div
-        v-if="showContactPicker"
-        class="modal-mask contact-modal-mask"
-        role="dialog"
-        aria-modal="true"
-        @mousedown.self="closeContactPicker"
-      >
-        <section class="modal-wrapper contact-window" @mousedown.stop @keydown.enter.exact.prevent="sendContact">
-          <header class="modal-header">
-            <strong>שלח איש קשר</strong>
-            <button type="button" class="modal-close" title="סגור" @click="closeContactPicker">×</button>
-          </header>
-          <div class="modal-body contact-list">
-            <input v-model="contactSearch" class="contact-search" placeholder="חיפוש איש קשר" />
-            <div class="contact-items">
-              <button
-                v-for="contact in filteredContacts"
-                :key="contact.jid"
-                class="contact-item"
-                type="button"
-                :class="{ selected: selectedContactForSend?.jid === contact.jid }"
-                @click="selectedContactForSend = contact"
-              >
-                <span class="contact-item-avatar">
-                  <span class="avatar">{{ initials(contact) }}</span>
-                </span>
-                <span class="contact-item-name">{{ contact.name }}</span>
-                <small class="contact-item-phone">{{ cleanPhone(contact.phoneNumber) || '' }}</small>
-              </button>
-              <p v-if="!filteredContacts.length" class="empty-list">אין אנשי קשר זמינים</p>
-            </div>
-          </div>
-          <footer class="modal-footer">
-            <button type="button" class="light-button" @click="closeContactPicker">ביטול</button>
-            <button type="submit" :disabled="!selectedContactForSend || busy" @click="sendContact">שלח איש קשר</button>
-          </footer>
-        </section>
-      </div>
-    </Transition>
-  </Teleport>
+  <ContactPickerModal
+    :open="showContactPicker"
+    :contacts="contacts"
+    :busy="busy"
+    @close="closeContactPicker"
+    @send="sendContact"
+  />
 
   <main v-if="!authenticated" class="login-screen">
     <form class="login-card" @submit.prevent="login">

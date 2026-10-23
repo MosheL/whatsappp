@@ -16,6 +16,8 @@ import {
 } from './message-renderer.js'
 import { isMessageEditable } from '../../src/message-utils.ts'
 import MessageBubble from './MessageBubble.vue'
+import Toast from './toast.js'
+import { useHoverMenu } from './composables/useHoverMenu.js'
 
 // Track typing clear timers per chat JID
 const typingTimers = new Map()
@@ -257,7 +259,7 @@ function copyWithPrefix(message) {
   const text = message.text || ''
   const clipboardText = prefix + text
   if (!clipboardText) return
-  navigator.clipboard.writeText(clipboardText).catch(() => {})
+  navigator.clipboard.writeText(clipboardText).then(() => Toast.success('הועתק')).catch(() => Toast.error('ההעתקה נכשלה'))
 }
 
 // Fallback copy for non-secure contexts (old textarea method)
@@ -279,15 +281,20 @@ function copyAllText(message) {
   const text = message.text || ''
   if (!text) return
   copyTextFallback(text)
+  Toast.success('הועתק')
 }
 
 function copyInteractiveCode(code) {
   if (!code) return
   const text = String(code)
   if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).catch(() => copyTextFallback(text))
+    navigator.clipboard.writeText(text).then(() => Toast.success('הועתק')).catch(() => {
+      copyTextFallback(text)
+      Toast.success('הועתק')
+    })
   } else {
     copyTextFallback(text)
+    Toast.success('הועתק')
   }
 }
 
@@ -327,6 +334,14 @@ function sendButtonReply(message, btn, index) {
   sentButtons.value.add(`${message.id}:${index}`)
   emit('button-reply', { jid: message.jid, text: btn.text, buttonId: btn.id || '', selectedIndex: index, messageId: message.id })
 }
+
+// -------- Hover-open message menu --------
+// The ⋯ button opens its menu on hover; the composable's grace delay lets the
+// pointer travel from the button into the (teleported) menu without closing it.
+const { open: openMessageMenu, scheduleClose: scheduleMenuClose, cancel: cancelMenuClose } = useHoverMenu({
+  onOpen: message => emit('set-message-menu', message),
+  onClose: () => emit('set-message-menu', null)
+})
 
 const bubbleActions = { emit, beginBubbleDrag, beginMediaDrag, toggleMessageMenu, openMessageMenu, scheduleMenuClose, mediaUrl,
   loadMedia, finishMediaLoad, copyInteractiveCode, sendButtonReply, transcribeMedia }
@@ -369,37 +384,10 @@ function handleThreadScroll() {
 
 }
 
-// -------- Hover-open message menu --------
-// The ⋯ button opens its menu on hover; a small grace delay lets the pointer
-// travel from the button into the (teleported) menu without closing it.
-let menuCloseTimer = null
-
-function cancelMenuClose() {
-  if (menuCloseTimer) {
-    clearTimeout(menuCloseTimer)
-    menuCloseTimer = null
-  }
-}
-
-function scheduleMenuClose() {
-  cancelMenuClose()
-  menuCloseTimer = setTimeout(() => {
-    menuCloseTimer = null
-    emit('set-message-menu', null)
-  }, 300)
-}
-
-function openMessageMenu(message) {
-  cancelMenuClose()
-  emit('set-message-menu', message)
-}
-
 function openReactionMenu(message) {
   cancelMenuClose()
   emit('set-reaction-menu', message)
 }
-
-onUnmounted(() => cancelMenuClose())
 
 function toggleMessageMenu(event, message) {
   emit('toggle-message-menu', message)

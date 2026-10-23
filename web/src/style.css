@@ -1840,6 +1840,14 @@ button {
   width: 28px;
 }
 
+/* Toasts (top-center, above modals) */
+.toaster { display: flex; flex-direction: column; gap: 8px; left: max(2vw, calc(50% - 150px)); list-style: none; margin: 0; padding: 0; position: fixed; top: 70px; width: min(95vw, 320px); z-index: 10050 }
+.toaster li { align-items: center; border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25); color: #ffffff; cursor: pointer; display: flex; font-size: 13px; font-weight: 600; padding: 10px 14px; text-align: center; white-space: pre-wrap }
+.toaster li.success { background: #128c7e }
+.toaster li.warning { background: #b9770e }
+.toaster li.error { background: #c0392b }
+.toaster li .toaster-text { flex: 1; min-width: 0 }
+
 /* File-upload strip: replaces the modal while a file is being sent */
 .uploading-strip { align-items: center; background: #ffffff; border-right: 3px solid #128c7e; border-radius: 6px; box-shadow: 0 1px 2px rgba(31, 41, 51, 0.1); display: flex; gap: 8px; padding: 6px 8px }
 .uploading-strip .uploading-thumb { border-radius: 4px; height: 36px; object-fit: cover; width: 36px }
@@ -1980,6 +1988,22 @@ button {
   padding: 0;
   width: 30px;
 }
+
+.emoji-panel .emoji-search { border: 1px solid #d5e0db; border-radius: 5px; font-size: 12px; grid-column: 1 / -1; height: 28px; padding: 0 8px; width: 100% }
+.emoji-panel .emoji-empty { color: #66727b; font-size: 11px; grid-column: 1 / -1; text-align: center }
+
+/* Send-later (schedule) panel */
+.schedule-panel { background: #ffffff; border: 1px solid #cfd7dc; border-radius: 8px; bottom: 78px; box-shadow: 0 8px 24px rgba(31, 41, 51, 0.16); display: flex; flex-direction: column; gap: 8px; left: 16px; padding: 10px; position: fixed; width: min(92vw, 340px); z-index: 12 }
+.schedule-panel .schedule-title { color: #128c7e; font-size: 13px }
+.schedule-panel .schedule-input { border: 1px solid #d5e0db; border-radius: 6px; font-size: 13px; height: 30px; padding: 0 8px }
+.schedule-panel .schedule-send { align-self: flex-start }
+.schedule-panel .schedule-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto }
+.schedule-panel .schedule-item { align-items: center; background: #f2f7f5; border: 1px solid #d5e0db; border-radius: 6px; display: flex; gap: 8px; padding: 6px 8px }
+.schedule-panel .schedule-item-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 }
+.schedule-panel .schedule-item-copy span { color: #26333b; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.schedule-panel .schedule-item-copy small { color: #66727b; font-size: 11px }
+.schedule-panel .schedule-cancel { background: transparent; border: 0; color: #5f6d75; cursor: pointer; font-size: 18px; height: 26px; line-height: 1; width: 26px }
+.schedule-panel .schedule-cancel:hover { color: #c0392b }
 
 .hidden-file-input {
   height: 1px;
@@ -2295,6 +2319,17 @@ button {
 .upload-dropzone small {
   color: #66727b;
 }
+
+/* Staged files list (multi-file send) */
+.upload-file-list { display: flex; flex-direction: column; gap: 6px; list-style: none; margin: 0; max-height: 240px; overflow-y: auto; padding: 0; width: 100% }
+.upload-file-list li { align-items: center; background: #f2f7f5; border: 1px solid #d5e0db; border-radius: 6px; display: flex; gap: 8px; padding: 6px 8px; text-align: start; width: 100% }
+.upload-file-list .upload-file-thumb { border-radius: 4px; height: 34px; object-fit: cover; width: 34px }
+.upload-file-list .upload-file-icon { font-size: 18px; line-height: 1 }
+.upload-file-list .upload-file-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 }
+.upload-file-list .upload-file-copy strong { color: #26333b; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.upload-file-list .upload-file-copy small { color: #66727b; font-size: 11px }
+.upload-file-list .upload-file-remove { background: transparent; border: 0; color: #5f6d75; cursor: pointer; font-size: 18px; height: 26px; line-height: 1; width: 26px }
+.upload-file-list .upload-file-remove:hover { color: #c0392b }
 
 .upload-preview-image {
   border-radius: 6px;

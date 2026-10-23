@@ -218,6 +218,8 @@ export class Bot {
   avatarFailures: Map<string, number>
   avatarQueue: Array<() => void>
   avatarActive = 0
+  scheduledQueueKey: string
+  scheduledSender: NodeJS.Timeout | undefined
 
   constructor(authKey: string, label: string, state: any, saveCreds: any, redis: any, botId = '') {
     this.events = new EventEmitter()
@@ -328,6 +330,17 @@ export class Bot {
         this.emitStatusDebounced()
       }
     })
+
+    // Scheduled ("send later") messages, stored in Redis and flushed by a timer.
+    this.scheduledQueueKey = `ui:${authKey}:scheduled`
+    this.scheduledSender = setInterval(() => {
+      this.flushScheduledMessages().catch(err => console.error(`${label}: scheduled send failed`, err.message))
+    }, 20000)
+    this.scheduledSender.unref()
+    // Flush shortly after startup so restarts pick up pending items quickly
+    setTimeout(() => {
+      this.flushScheduledMessages().catch(() => {})
+    }, 5000).unref()
   }
 
   // -------- Public API --------
@@ -436,7 +449,11 @@ export class Bot {
     const q = String(query || '').trim().toLowerCase()
     if (!q) return { results: [], truncated: false }
     const limit = Math.max(1, Math.min(Number(opts.limit) || 50, 200))
-    const maxScan = Math.max(limit, Number(opts.maxScan) || 5000)
+    // Search the whole stored history, not only the newest slice: page through
+    // each chat's index (500 ids at a time) instead of scanning a fixed window,
+    // so messages older than the newest 500 per chat are found too.
+    const maxScan = Math.max(limit, Number(opts.maxScan) || 20000)
+    const PAGE = 500
 
     const candidateJids = opts.chatJid
       ? [this.contactCache.canonicalJid(opts.chatJid)]
@@ -447,27 +464,32 @@ export class Bot {
     for (const jid of candidateJids) {
       if (results.length >= limit || scanned >= maxScan) break
       if (!jid) continue
-      const ids: string[] = await this.redis.zrevrange(this.messageIndexKey(jid), 0, 499)
-      if (!ids.length) continue
-      const raw = await this.messageStore.loadMessagePayloads(jid, ids)
-      scanned += ids.length
-      for (const item of raw) {
-        if (!item) continue
-        let message: UiMessage
-        try { message = JSON.parse(item) } catch { continue }
-        const text = String(message.text || '')
-        if (!text || !text.toLowerCase().includes(q)) continue
-        const safe = this.publicMessage(message)
-        results.push({
-          jid: safe.jid,
-          id: safe.id,
-          text: safe.text,
-          sender: safe.sender,
-          fromMe: safe.fromMe,
-          timestamp: safe.timestamp,
-          type: safe.type
-        })
-        if (results.length >= limit) break
+      // Page from newest to oldest until the index is exhausted.
+      let exhausted = false
+      for (let offset = 0; !exhausted && results.length < limit && scanned < maxScan; offset += PAGE) {
+        const ids: string[] = await this.redis.zrevrange(this.messageIndexKey(jid), offset, offset + PAGE - 1)
+        if (!ids.length) break
+        if (ids.length < PAGE) exhausted = true
+        const raw = await this.messageStore.loadMessagePayloads(jid, ids)
+        scanned += ids.length
+        for (const item of raw) {
+          if (!item) continue
+          let message: UiMessage
+          try { message = JSON.parse(item) } catch { continue }
+          const text = String(message.text || '')
+          if (!text || !text.toLowerCase().includes(q)) continue
+          const safe = this.publicMessage(message)
+          results.push({
+            jid: safe.jid,
+            id: safe.id,
+            text: safe.text,
+            sender: safe.sender,
+            fromMe: safe.fromMe,
+            timestamp: safe.timestamp,
+            type: safe.type
+          })
+          if (results.length >= limit) break
+        }
       }
     }
 
@@ -1074,6 +1096,70 @@ export class Bot {
     if (!isJidGroup(jid)) throw new Error('Not a group')
     const code = await this.sock.groupInviteCode(jid)
     return code ? `https://chat.whatsapp.com/${code}` : ''
+  }
+
+  // -------- Scheduled ("send later") messages --------
+
+  async scheduleMessage(jid: string, text: string, sendAt: number): Promise<{ id: string, sendAt: number }> {
+    jid = this.contactCache.resolveOutgoingJid(jid)
+    const id = `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    const item = { id, jid, text, sendAt, attempts: 0 }
+    await this.redis.zadd(this.scheduledQueueKey, sendAt, JSON.stringify(item))
+    return { id, sendAt }
+  }
+
+  async scheduledMessages(jid?: string) {
+    const rows = await this.redis.zrange(this.scheduledQueueKey, 0, -1)
+    const items = []
+    for (const row of rows) {
+      try {
+        const item = JSON.parse(row)
+        if (!jid || this.contactCache.canonicalJid(item.jid) === this.contactCache.canonicalJid(jid)) {
+          items.push({ id: item.id, jid: this.contactCache.canonicalJid(item.jid), text: item.text, sendAt: item.sendAt })
+        }
+      } catch {}
+    }
+    return items.sort((a, b) => a.sendAt - b.sendAt)
+  }
+
+  async cancelScheduledMessage(id: string) {
+    const rows = await this.redis.zrange(this.scheduledQueueKey, 0, -1)
+    for (const row of rows) {
+      try {
+        if (JSON.parse(row)?.id === id) await this.redis.zrem(this.scheduledQueueKey, row)
+      } catch {}
+    }
+  }
+
+  // Send everything whose time has come. Called on a timer; also runs once at
+  // startup so pending messages survive restarts.
+  async flushScheduledMessages() {
+    if (!this.sock) return
+    const now = Date.now()
+    const rows = await this.redis.zrangebyscore(this.scheduledQueueKey, 0, now)
+    for (const row of rows) {
+      let item: any
+      try { item = JSON.parse(row) } catch { await this.redis.zrem(this.scheduledQueueKey, row); continue }
+      if (!item?.jid || !item?.text) {
+        await this.redis.zrem(this.scheduledQueueKey, row)
+        continue
+      }
+      try {
+        await this.sendText(item.jid, item.text)
+        await this.redis.zrem(this.scheduledQueueKey, row)
+        console.log(`${this.label}: scheduled message sent to ${item.jid}`)
+      } catch (err: any) {
+        // Keep the message for the next tick, but give up after repeated failures
+        item.attempts = (item.attempts || 0) + 1
+        if (item.attempts >= 5) {
+          await this.redis.zrem(this.scheduledQueueKey, row)
+          console.error(`${this.label}: dropped scheduled message to ${item.jid} after 5 attempts`, err.message)
+        } else {
+          await this.redis.zadd(this.scheduledQueueKey, Date.now() + 60000, JSON.stringify(item))
+          await this.redis.zrem(this.scheduledQueueKey, row)
+        }
+      }
+    }
   }
 
   async sendText(jid: string, text: string, quotedId = '', quotedJid = '', mentions: string[] = []) {

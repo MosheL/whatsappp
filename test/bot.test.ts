@@ -874,6 +874,43 @@ test('searchMessages limits to a single chat when chatJid is given', async () =>
   assert.equal(results[0].id, 'm1')
 })
 
+test('searchMessages pages past the newest 500 ids and finds old messages', async () => {
+  const jid = '972501234567@s.whatsapp.net'
+  // 1200 ids: the match sits beyond the first 500-id page, i.e. an "old" message.
+  const allIds = Array.from({ length: 1200 }, (_, i) => `m${i}`)
+  const payloads: Record<string, string> = {}
+  for (const id of allIds) {
+    payloads[`${jid}:${id}`] = JSON.stringify({
+      id,
+      jid,
+      text: id === 'm1199' ? 'needle in the haystack' : `filler ${id}`,
+      sender: 'A',
+      fromMe: false,
+      timestamp: 1000 + Number(id.slice(1)),
+      type: 'conversation'
+    })
+  }
+  const fakeBot: any = {
+    chatIndexKey: 'idx',
+    chatCacheKey: 'chats',
+    messageIndexKey: (j: string) => `idx:${j}`,
+    messagePayloadKey: (j: string, id: string) => `${j}:${id}`,
+    contactCache: { canonicalJid: (value: string) => value },
+    messageStore: { loadMessagePayloads: async (j: string, ids: string[]) => ids.map(id => payloads[`${j}:${id}`] || null) },
+    publicMessage: (message: any) => message,
+    redis: {
+      // Real zrevrange semantics: newest-first slice by rank.
+      zrevrange: async (key: string, from: number, to: number) => key === 'idx' ? [jid] : allIds.slice(from, to + 1),
+      hmget: async () => [JSON.stringify({ name: 'A' })]
+    }
+  }
+
+  const { results, truncated } = await Bot.prototype.searchMessages.call(fakeBot, 'needle', { chatJid: jid })
+  assert.equal(truncated, false)
+  assert.equal(results.length, 1)
+  assert.equal(results[0].id, 'm1199')
+})
+
 test('getMessagesAround returns the anchor and context on each side', async () => {
   const jid = '972501234567@s.whatsapp.net'
   const ids = ['old', 'anchor', 'new']

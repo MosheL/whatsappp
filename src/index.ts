@@ -865,6 +865,50 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
+  // -------- Scheduled ("send later") messages --------
+  if (req.method === 'POST' && url.pathname === '/api/schedule-message') {
+    const parsed = await readBotJson(req, res)
+    if (!parsed) return
+    try {
+      const sendAt = Number(parsed.data.sendAt)
+      if (!parsed.data.jid || !parsed.data.text || !Number.isFinite(sendAt) || sendAt <= Date.now()) {
+        sendJson(res, 400, { error: 'חסר נמען, טקסט או זמן עתידי' })
+        return
+      }
+      const result = await parsed.bot.scheduleMessage(parsed.data.jid, parsed.data.text, sendAt)
+      sendJson(res, 200, { ok: true, ...result })
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/scheduled-messages') {
+    const bot = bots.get(url.searchParams.get('bot') || '')
+    if (!bot) {
+      sendJson(res, 404, { error: 'לקוח לא נמצא' })
+      return
+    }
+    try {
+      sendJson(res, 200, { messages: await bot.scheduledMessages(url.searchParams.get('jid') || undefined) })
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/scheduled-cancel') {
+    const parsed = await readBotJson(req, res)
+    if (!parsed) return
+    try {
+      await parsed.bot.cancelScheduledMessage(String(parsed.data.id || ''))
+      sendJson(res, 200, { ok: true })
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/send') {
     const parsed = await readBotJson(req, res)
     if (!parsed) return
