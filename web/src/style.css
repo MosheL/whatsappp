@@ -332,13 +332,16 @@ button {
 .menu-read-toggle input:checked + .switch { background: #128c7e }
 .menu-read-toggle input:checked + .switch::after { transform: translateX(-14px) }
 
-.menu-mark-read {
+.menu-header .menu-mark-read {
+  color: #0b8fdc;
   flex: 0 0 auto;
   height: 28px;
   width: 28px;
 }
 
-.menu-mark-read svg { height: 16px; width: 16px }
+.menu-header .menu-mark-read:hover:not(:disabled) { background: #e0e6ea; color: #0b8fdc }
+
+.menu-mark-read .tick-icon { display: block; height: 11px; width: 18px }
 
 .chat-list {
   flex: 1;
