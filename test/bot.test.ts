@@ -911,6 +911,24 @@ test('searchMessages pages past the newest 500 ids and finds old messages', asyn
   assert.equal(results[0].id, 'm1199')
 })
 
+test('status() counts unread chats and unread messages excluding archived', () => {
+  const fakeBot: any = {
+    id: 'me@s.whatsapp.net',
+    authKey: 'auth',
+    label: 'L',
+    connection: 'open',
+    qr: '',
+    listChats: () => [
+      { jid: 'a@s.whatsapp.net', unread: 3, isArchived: false },
+      { jid: 'b@s.whatsapp.net', unread: 5, isArchived: false },
+      { jid: 'c@s.whatsapp.net', unread: 7, isArchived: true }
+    ]
+  }
+  const status = Bot.prototype.status.call(fakeBot)
+  assert.equal(status.unreadSessionCount, 2)
+  assert.equal(status.unreadMessageCount, 8)
+})
+
 test('managedGroups matches the bot by LID or PN participant identity', async () => {
   const fakeBot: any = {
     sock: {

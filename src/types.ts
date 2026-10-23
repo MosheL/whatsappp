@@ -253,6 +253,8 @@ export type BotStatus = {
   qr: string
   chatCount: number
   unreadSessionCount: number
+  /** Total unread messages across non-archived chats */
+  unreadMessageCount: number
 }
 
 // -------- WebSocket event payloads --------

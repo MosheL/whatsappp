@@ -1945,7 +1945,21 @@ onUnmounted(() => {
   <main v-if="authenticated" class="app-shell">
     <aside class="sidebar">
       <header class="topbar">
-        <select v-model="selectedBot" class="client-select" aria-label="לקוח">
+        <div v-if="bots.length && bots.length < 3" class="client-tabs" role="tablist" aria-label="לקוח">
+          <button
+            v-for="bot in bots"
+            :key="bot.id"
+            type="button"
+            role="tab"
+            :class="{ active: selectedBot === bot.id }"
+            :aria-selected="selectedBot === bot.id"
+            @click="selectedBot = bot.id"
+          >
+            <span>{{ bot.label }}</span>
+            <b v-if="bot.unreadMessageCount">{{ bot.unreadMessageCount }}</b>
+          </button>
+        </div>
+        <select v-else v-model="selectedBot" class="client-select" aria-label="לקוח">
           <option v-for="bot in bots" :key="bot.id" :value="bot.id">{{ bot.label }} ({{ bot.unreadSessionCount || 0 }})</option>
         </select>
         <span :class="['ws-pill', { online: wsState === 'מחובר' }]">{{ wsState }}</span>

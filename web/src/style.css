@@ -102,6 +102,59 @@ button {
   margin-inline-start: auto;
 }
 
+.client-tabs {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+}
+
+.client-tabs button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  color: #687781;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 600;
+  gap: 6px;
+  overflow: hidden;
+  padding: 7px 12px 6px;
+  white-space: nowrap;
+}
+
+.client-tabs button:hover {
+  background: #e9f3f0;
+}
+
+.client-tabs button.active {
+  border-bottom-color: #0b8fdc;
+  color: #0b8fdc;
+}
+
+.client-tabs button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.client-tabs button b {
+  background: #dce5ea;
+  border-radius: 999px;
+  color: inherit;
+  font-size: 10px;
+  min-width: 18px;
+  padding: 2px 5px;
+  text-align: center;
+}
+
+.client-tabs button.active b {
+  background: #0b8fdc;
+  color: #ffffff;
+}
+
 .ws-pill {
   background: #e8ecef;
   border-radius: 999px;

@@ -356,7 +356,10 @@ export class Bot {
       chatCount: chats.length,
       // Only count unread chats that are NOT archived, so the select-box
       // badge reflects actionable (inbox) unread rather than hidden chats.
-      unreadSessionCount: chats.filter(chat => Number(chat.unread || 0) > 0 && !chat.isArchived).length
+      unreadSessionCount: chats.filter(chat => Number(chat.unread || 0) > 0 && !chat.isArchived).length,
+      unreadMessageCount: chats
+        .filter(chat => !chat.isArchived)
+        .reduce((sum, chat) => sum + Math.max(0, Number(chat.unread || 0)), 0)
     }
   }
 
