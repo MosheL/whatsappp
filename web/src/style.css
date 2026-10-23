@@ -2000,19 +2000,20 @@ button {
 /* Attach submenu (file / contact) above the composer */
 .attach-wrap { position: relative }
 .attach-menu { background: #ffffff; border: 1px solid #cfd7dc; border-radius: 8px; bottom: calc(100% + 8px); box-shadow: 0 8px 24px rgba(31, 41, 51, 0.16); display: flex; flex-direction: column; gap: 2px; min-width: 160px; padding: 4px; position: absolute; right: 0; z-index: 12 }
-.attach-menu button { background: transparent; border: 0; border-radius: 5px; color: #27343c; cursor: pointer; font-size: 13px; padding: 7px 10px; text-align: start; white-space: nowrap }
+.attach-menu button { background: transparent; border: 0; border-radius: 5px; color: #27343c; cursor: pointer; font-size: 13px; min-height: 0; padding: 7px 10px; text-align: start; white-space: nowrap }
 .attach-menu button:hover { background: #eef4f2 }
 
-/* Send button group: send + schedule arrow */
-.send-group { align-items: center; display: flex; gap: 6px }
-.send-button { background: #128c7e; border: 0; border-radius: 999px; color: #ffffff; cursor: pointer; font-size: 14px; font-weight: 700; height: 34px; min-width: 72px; padding: 0 18px }
-.send-button:hover:not(:disabled) { background: #0f7668 }
-.send-button:disabled { opacity: 0.4 }
-.schedule-trigger { align-items: center; anchor-name: --schedule-button; background: transparent; border: 0; border-radius: 50%; color: #667781; cursor: pointer; display: inline-flex; height: 28px; justify-content: center; transition: background 0.15s, color 0.15s; width: 28px }
-.schedule-trigger svg { height: 18px; width: 18px }
-.schedule-trigger:hover:not(:disabled) { background: #e0e6ea; color: #128c7e }
-.schedule-trigger.active { background: #128c7e; color: #ffffff }
-.schedule-trigger:disabled { opacity: 0.35; cursor: default }
+/* Send button group: send + schedule arrow. Note: scoped as .composer <class>
+   so the rules outrank the generic `.composer button` base style. */
+.send-group { align-items: center; display: flex; gap: 1px }
+.composer .send-button { background: #128c7e; border: 0; border-radius: 999px; color: #ffffff; cursor: pointer; font-size: 14px; font-weight: 700; height: 34px; min-height: 34px; min-width: 72px; padding: 0 18px }
+.composer .send-button:hover:not(:disabled) { background: #0f7668 }
+.composer .send-button:disabled { opacity: 0.4 }
+.composer .schedule-trigger { align-items: center; anchor-name: --schedule-button; background: transparent; border: 0; border-radius: 50%; color: #667781; cursor: pointer; display: inline-flex; height: 28px; justify-content: center; min-height: 0; padding: 0; transition: background 0.15s, color 0.15s; width: 28px }
+.composer .schedule-trigger svg { display: block; height: 18px; width: 18px }
+.composer .schedule-trigger:hover:not(:disabled) { background: #e0e6ea; color: #128c7e }
+.composer .schedule-trigger.active { background: #128c7e; color: #ffffff }
+.composer .schedule-trigger:disabled { opacity: 0.35; cursor: default }
 
 /* Send-later (schedule) panel */
 .schedule-panel { background: #ffffff; border: 1px solid #cfd7dc; border-radius: 10px; bottom: 78px; box-shadow: 0 8px 24px rgba(31, 41, 51, 0.16); display: flex; flex-direction: column; gap: 8px; left: 16px; padding: 12px; position: fixed; width: min(92vw, 340px); z-index: 12 }
