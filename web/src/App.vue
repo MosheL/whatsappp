@@ -1995,6 +1995,15 @@ onUnmounted(() => {
             <input v-model="search" type="search" placeholder="חיפוש" class="menu-search" />
           </div>
           <button
+            class="icon-action menu-mark-read"
+            type="button"
+            title="סמן הכל כנקרא"
+            aria-label="סמן הכל כנקרא"
+            @click="markAllRead"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 7l-1.41-1.41-6.59 6.59 1.41 1.41L18 7zm-5.66-2.83-.72-.72-6.59 6.59.72.72 1 1 5.88-5.88-.29-.29zM.31 12l.72.72 5.88-5.88-.72-.72L.31 12zm19.97-1.41-8.53 8.53-3.22-3.22-.72.72 3.94 3.94 9.25-9.25-.72-.72z" fill="currentColor"/></svg>
+          </button>
+          <button
             class="icon-action menu-toggle-btn"
             type="button"
             :class="{ active: showMenu }"
@@ -2017,10 +2026,6 @@ onUnmounted(() => {
             <span class="switch" aria-hidden="true"></span>
             <span>נקרא בפתיחה</span>
           </label>
-          <button class="menu-mark-read" type="button" title="סמן הכל כנקרא" @click="markAllRead">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 7l-1.41-1.41-6.59 6.59 1.41 1.41L18 7zm-5.66-2.83-.72-.72-6.59 6.59.72.72 1 1 5.88-5.88-.29-.29zM.31 12l.72.72 5.88-5.88-.72-.72L.31 12zm19.97-1.41-8.53 8.53-3.22-3.22-.72.72 3.94 3.94 9.25-9.25-.72-.72z" fill="currentColor"/></svg>
-            סמן הכל כנקרא
-          </button>
         </div>
       </div>
 

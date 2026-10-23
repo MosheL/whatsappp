@@ -332,25 +332,13 @@ button {
 .menu-read-toggle input:checked + .switch { background: #128c7e }
 .menu-read-toggle input:checked + .switch::after { transform: translateX(-14px) }
 
-/* Mark-all-read action row */
 .menu-mark-read {
-  align-items: center;
-  background: transparent;
-  border: 0;
-  border-radius: 8px;
-  color: #128c7e;
-  cursor: pointer;
-  display: flex;
-  font-size: 13px;
-  font-weight: 600;
-  gap: 10px;
-  padding: 6px 8px;
-  white-space: nowrap;
+  flex: 0 0 auto;
+  height: 28px;
+  width: 28px;
 }
 
-.menu-mark-read svg { flex: 0 0 auto; height: 16px; width: 16px }
-
-.menu-mark-read:hover { background: #eef4f2 }
+.menu-mark-read svg { height: 16px; width: 16px }
 
 .chat-list {
   flex: 1;
