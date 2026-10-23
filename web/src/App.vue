@@ -1983,21 +1983,37 @@ onUnmounted(() => {
 
       <div class="chat-menu">
         <div class="menu-header">
-          <input v-model="search" type="search" placeholder="חיפוש" class="menu-search" />
-          <button class="menu-toggle-btn" type="button" @click="showMenu = !showMenu" :title="showMenu ? 'סגור תפריט' : 'תפריט'">
-            {{ showMenu ? '&#183;' : '&#183;' }}{{ '\u00A0' }}{{ showMenu ? '\u2039' : '\u203A' }}
+          <div class="menu-search-box">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5Zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14Z" fill="currentColor"/></svg>
+            <input v-model="search" type="search" placeholder="חיפוש" class="menu-search" />
+          </div>
+          <button
+            class="icon-action menu-toggle-btn"
+            type="button"
+            :class="{ active: showMenu }"
+            :title="showMenu ? 'סגור תפריט' : 'תפריט'"
+            :aria-expanded="showMenu"
+            @click="showMenu = !showMenu"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5 5.5 9l1.4-1.4L12 12.7l5.1-5.1L18.5 9 12 15.5Z" fill="currentColor"/></svg>
           </button>
         </div>
         <div v-if="showMenu" class="menu-items">
           <form class="menu-new-chat" @submit.prevent="openNewChat">
-            <input v-model="newJid" placeholder="מספר" class="menu-new-jid" />
-            <button type="submit" class="menu-new-btn" title="פתח שיחה חדשה">➕</button>
+            <input v-model="newJid" placeholder="מספר טלפון" class="menu-new-jid" type="tel" dir="ltr" />
+            <button type="submit" class="menu-new-btn" title="פתח שיחה חדשה" aria-label="פתח שיחה חדשה">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2Z" fill="currentColor"/></svg>
+            </button>
           </form>
           <label class="menu-read-toggle" title="סמן שיחה כנקראה כשפותחים אותה">
             <input v-model="autoMarkRead" type="checkbox" />
-            <span>נקרא</span>
+            <span class="switch" aria-hidden="true"></span>
+            <span>נקרא בפתיחה</span>
           </label>
-          <button class="menu-mark-read" type="button" title="סמן הכל כנקרא" @click="markAllRead">הכל נקרא</button>
+          <button class="menu-mark-read" type="button" title="סמן הכל כנקרא" @click="markAllRead">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 7l-1.41-1.41-6.59 6.59 1.41 1.41L18 7zm-5.66-2.83-.72-.72-6.59 6.59.72.72 1 1 5.88-5.88-.29-.29zM.31 12l.72.72 5.88-5.88-.72-.72L.31 12zm19.97-1.41-8.53 8.53-3.22-3.22-.72.72 3.94 3.94 9.25-9.25-.72-.72z" fill="currentColor"/></svg>
+            סמן הכל כנקרא
+          </button>
         </div>
       </div>
 

@@ -188,128 +188,167 @@ button {
 }
 
 .chat-menu {
-  background: #f5f5f5;
-  border-bottom: 1px solid #ddd;
+  background: #ffffff;
+  border-bottom: 1px solid #d8dee4;
+  padding: 8px 10px;
 }
 
 .menu-header {
-  display: flex;
-  gap: 4px;
-  padding: 6px 10px;
   align-items: center;
+  display: flex;
+  gap: 6px;
 }
+
+/* Search box with an inline magnifier icon */
+.menu-search-box {
+  align-items: center;
+  background: #f0f2f5;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: #687781;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  padding: 0 10px;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.menu-search-box svg { flex: 0 0 auto; height: 16px; width: 16px }
+
+.menu-search-box:focus-within { background: #ffffff; border-color: #128c7e }
 
 .menu-search {
+  background: transparent;
+  border: 0;
   flex: 1;
-  padding: 6px 10px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
   font-size: 13px;
+  min-width: 0;
   outline: none;
-  min-width: 60px;
-}
-
-.menu-search:focus {
-  border-color: #0b8fdc;
+  padding: 7px 2px;
 }
 
 .menu-toggle-btn {
-  padding: 6px 10px;
-  border: 1px solid #ddd;
-  background: #fff;
-  border-radius: 6px;
-  font-size: 14px;
-  cursor: pointer;
-  line-height: 1;
-  color: #44515a;
+  flex: 0 0 auto;
+  height: 30px;
+  width: 30px;
 }
 
-.menu-toggle-btn:hover {
-  background: #e8f4ff;
-}
+.menu-toggle-btn svg { transition: transform 0.15s }
+.menu-toggle-btn.active svg { transform: rotate(180deg) }
 
+/* Collapsible menu body: vertical list of rows */
 .menu-items {
+  background: #fafbfc;
+  border: 1px solid #e4e9ed;
+  border-radius: 10px;
   display: flex;
-  gap: 8px;
-  padding: 6px 12px 10px;
-  align-items: center;
-  border-top: 1px solid #e0e0e0;
-  background: #fafafa;
+  flex-direction: column;
+  margin-top: 8px;
+  overflow: hidden;
+  padding: 4px;
 }
 
 .menu-new-chat {
+  align-items: center;
   display: flex;
-  gap: 2px;
+  gap: 6px;
+  padding: 4px;
 }
 
 .menu-new-jid {
-  width: 70px;
-  padding: 6px 6px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  font-size: 12px;
+  background: #ffffff;
+  border: 1px solid #d5e0db;
+  border-radius: 8px;
+  flex: 1;
+  font-size: 13px;
+  min-width: 0;
   outline: none;
+  padding: 7px 10px;
 }
 
-.menu-new-jid:focus {
-  border-color: #0b8fdc;
-}
+.menu-new-jid:focus { border-color: #128c7e }
 
 .menu-new-btn {
-  padding: 6px 8px;
-  border: 1px solid #ddd;
-  background: #fff;
-  border-radius: 6px;
-  font-size: 16px;
-  cursor: pointer;
-  line-height: 1;
-}
-
-.menu-new-btn:hover {
-  background: #e8f4ff;
-}
-
-.menu-read-toggle {
-  display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: #44515a;
+  background: #128c7e;
+  border: 0;
+  border-radius: 50%;
+  color: #ffffff;
   cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 30px;
+  justify-content: center;
+  transition: background 0.15s;
+  width: 30px;
+}
+
+.menu-new-btn svg { display: block; height: 18px; width: 18px }
+
+.menu-new-btn:hover { background: #0f7668 }
+
+/* Auto-mark-read switch row */
+.menu-read-toggle {
+  align-items: center;
+  border-radius: 8px;
+  color: #3b4a52;
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  gap: 10px;
+  padding: 8px;
+  position: relative;
   white-space: nowrap;
-  padding: 4px 8px;
-  background: #fff;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
 }
 
-.menu-read-toggle:hover {
-  background: #e8f4ff;
+.menu-read-toggle:hover { background: #eef4f2 }
+
+.menu-read-toggle input { height: 0; opacity: 0; position: absolute; width: 0 }
+
+.menu-read-toggle .switch {
+  background: #c4cfd6;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  height: 18px;
+  position: relative;
+  transition: background 0.15s;
+  width: 32px;
 }
 
-.menu-read-toggle input {
-  accent-color: #0b8fdc;
-  height: 16px;
-  margin: 0;
-  width: 16px;
+.menu-read-toggle .switch::after {
+  background: #ffffff;
+  border-radius: 50%;
+  content: '';
+  height: 14px;
+  inset-inline-start: 2px;
+  position: absolute;
+  top: 2px;
+  transition: transform 0.15s;
+  width: 14px;
 }
 
+.menu-read-toggle input:checked + .switch { background: #128c7e }
+.menu-read-toggle input:checked + .switch::after { transform: translateX(-14px) }
+
+/* Mark-all-read action row */
 .menu-mark-read {
-  padding: 6px 12px;
-  border: 1px solid #0b8fdc;
-  background: #fff;
-  border-radius: 6px;
-  font-size: 13px;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: #128c7e;
   cursor: pointer;
-  line-height: 1;
-  color: #0b8fdc;
+  display: flex;
+  font-size: 13px;
+  font-weight: 600;
+  gap: 10px;
+  padding: 8px;
   white-space: nowrap;
 }
 
-.menu-mark-read:hover {
-  background: #e8f4ff;
-  border-color: #0a7bc4;
-}
+.menu-mark-read svg { flex: 0 0 auto; height: 16px; width: 16px }
+
+.menu-mark-read:hover { background: #eef4f2 }
 
 .chat-list {
   flex: 1;
