@@ -1427,13 +1427,31 @@ export class Bot {
             : { document: file, fileName, mimetype: mimeType, caption }
     if (forwarded) content.contextInfo = { forwardingScore: 1, isForwarded: true }
 
+    // Generate a thumbnail + dimensions for sent images so they render with a
+    // preview in the UI, exactly like received ones.
+    let thumbnail: string | undefined
+    let width = 0
+    let height = 0
+    if (mimeType.startsWith('image/')) {
+      try {
+        const rotated = sharp(file, { failOn: 'none' }).rotate()
+        const meta = await sharp(file, { failOn: 'none' }).metadata()
+        width = (meta.orientation && meta.orientation >= 5 ? meta.height : meta.width) || 0
+        height = (meta.orientation && meta.orientation >= 5 ? meta.width : meta.height) || 0
+        const thumb = await rotated.resize({ width: 320, height: 320, fit: 'inside' }).jpeg({ quality: 60 }).toBuffer()
+        thumbnail = `data:image/jpeg;base64,${thumb.toString('base64')}`
+      } catch {
+        // Not fatal — the message is sent without a preview
+      }
+    }
+
     const sent = await this.sock.sendMessage(jid, content)
     const now = Date.now()
     if (sent?.key?.id) {
       await this.messageStore.persistMedia(jid, sent.key.id, file)
     }
     const media = mimeType.startsWith('image/')
-      ? { kind: 'image' as const, mimetype: mimeType, caption, url: '' }
+      ? { kind: 'image' as const, mimetype: mimeType, caption, url: '', thumbnail, width: width || undefined, height: height || undefined }
       : mimeType.startsWith('video/')
         ? { kind: 'video' as const, mimetype: mimeType, caption, url: '' }
         : mimeType.startsWith('audio/')

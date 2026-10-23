@@ -39,6 +39,9 @@ const textAreaRef = ref(null)
 const caption = ref('')
 const selectedFile = ref(null)
 const selectedFileForwarded = ref(false)
+// File currently being uploaded: shown as an in-composer "uploading strip"
+// after the modal closes, until the send completes or fails.
+const uploadingFile = ref(null)
 const fileInputRef = ref(null)
 const captionInputRef = ref(null)
 const draggingFile = ref(false)
@@ -92,6 +95,7 @@ let linkPreviewRequest = 0
 const markingRead = new Set()
 
 const { url: selectedFilePreviewUrl, setBlob: setFilePreviewBlob, clearBlob: clearFilePreviewBlob } = useBlob()
+const { url: uploadingPreviewUrl, setBlob: setUploadingPreviewBlob, clearBlob: clearUploadingPreviewBlob } = useBlob()
 
 function loadUsedEmojis() {
   try {
@@ -1428,27 +1432,46 @@ function insertEmoji(emoji) {
 
 async function sendFile() {
   if (busy.value || !selectedChat.value || !selectedFile.value) return
+  const file = selectedFile.value
+  const captionText = caption.value
+  const forwarded = selectedFileForwarded.value
+  const jid = activeSendJid()
+  const bot = selectedBot.value
   busy.value = true
   error.value = ''
+  // Close the modal immediately and move the wait indicator into the main
+  // window: an uploading strip in the composer replaces the modal while the
+  // upload runs, so the thread stays visible and interactive.
+  showUploadModal.value = false
+  uploadingFile.value = { name: file.name || 'קובץ' }
+  if (file.type?.startsWith('image/')) setUploadingPreviewBlob(file)
+  clearFile()
+  // The composer text was consumed as the file caption
+  text.value = ''
   try {
     const form = new FormData()
-    form.append('bot', selectedBot.value)
-    form.append('jid', activeSendJid())
-    form.append('caption', caption.value)
-    form.append('forwarded', String(selectedFileForwarded.value))
-    form.append('file', selectedFile.value)
+    form.append('bot', bot)
+    form.append('jid', jid)
+    form.append('caption', captionText)
+    form.append('forwarded', String(forwarded))
+    form.append('file', file)
     const data = await api('/api/send-file', { method: 'POST', body: form })
     if (data.message?.jid === selectedChat.value) {
       upsertMessage(data.message)
       scrollToBottom(data.message)
     }
-    // Clear the composer text since it was used as the file caption
-    text.value = ''
-    clearFile()
-    showUploadModal.value = false
   } catch (err) {
     error.value = err.message
+    // Send failed — restore the modal with the same file so it can be retried
+    clearFilePreviewBlob()
+    selectedFile.value = file
+    selectedFileForwarded.value = forwarded
+    if (file.type?.startsWith('image/')) setFilePreviewBlob(file)
+    caption.value = captionText
+    showUploadModal.value = true
   } finally {
+    uploadingFile.value = null
+    clearUploadingPreviewBlob()
     busy.value = false
   }
 }
@@ -1917,6 +1940,14 @@ onUnmounted(() => {
             <small dir="ltr">{{ linkPreviewHost({ linkPreview: composerLinkPreview }) }}</small>
           </span>
         </a>
+        <div v-if="uploadingFile" class="uploading-strip" dir="auto">
+          <img v-if="uploadingPreviewUrl" class="uploading-thumb" :src="uploadingPreviewUrl" alt="" />
+          <span v-else class="uploading-icon" aria-hidden="true">📎</span>
+          <div class="uploading-copy">
+            <strong>{{ uploadingFile.name }}</strong>
+            <small><span class="spinner" aria-hidden="true"></span> שולח קובץ…</small>
+          </div>
+        </div>
         <div v-if="replyTo" class="reply-strip">
           <div>
             <strong>משיב ל{{ messageSenderName(replyTo) }}</strong>
@@ -1956,7 +1987,7 @@ onUnmounted(() => {
               <strong>{{ participant.name }}</strong>
             </button>
           </div>
-          <button type="submit" :disabled="!selectedChat || busy || isReadOnly">{{ busy ? 'Preparing...' : 'שלח' }}</button>
+          <button type="submit" :disabled="!selectedChat || busy || isReadOnly">שלח</button>
         </form>
       </footer>
     </section>
