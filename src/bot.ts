@@ -1149,6 +1149,22 @@ export class Bot {
     }
   }
 
+  // Edit a pending scheduled message (text and/or time) by re-queuing it.
+  async updateScheduledMessage(id: string, text: string, sendAt: number) {
+    const rows = await this.redis.zrange(this.scheduledQueueKey, 0, -1)
+    for (const row of rows) {
+      let item: any
+      try { item = JSON.parse(row) } catch { continue }
+      if (item?.id !== id) continue
+      await this.redis.zrem(this.scheduledQueueKey, row)
+      const next = { ...item, text, sendAt, attempts: 0 }
+      await this.redis.zadd(this.scheduledQueueKey, sendAt, JSON.stringify(next))
+      this.events.emit('event', { type: 'scheduled', bot: this.authKey, jid: item.jid })
+      return { id, sendAt }
+    }
+    throw new Error('הודעה מתוזמנת לא נמצאה')
+  }
+
   // Send everything whose time has come. Called on a timer; also runs once at
   // startup so pending messages survive restarts.
   async flushScheduledMessages() {

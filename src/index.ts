@@ -897,6 +897,23 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/scheduled-update') {
+    const parsed = await readBotJson(req, res)
+    if (!parsed) return
+    try {
+      const sendAt = Number(parsed.data.sendAt)
+      if (!parsed.data.id || !parsed.data.text || !Number.isFinite(sendAt) || sendAt <= Date.now()) {
+        sendJson(res, 400, { error: 'חסר מזהה, טקסט או זמן עתידי' })
+        return
+      }
+      const result = await parsed.bot.updateScheduledMessage(String(parsed.data.id), String(parsed.data.text), sendAt)
+      sendJson(res, 200, { ok: true, ...result })
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/scheduled-cancel') {
     const parsed = await readBotJson(req, res)
     if (!parsed) return

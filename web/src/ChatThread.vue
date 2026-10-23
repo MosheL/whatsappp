@@ -92,7 +92,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits([
-  'select-chat', 'toggle-message-menu', 'set-message-menu', 'set-reaction-menu', 'reply-message',
+  'select-chat', 'toggle-message-menu', 'set-message-menu', 'set-reaction-menu', 'edit-scheduled', 'reply-message',
   'delete-message',
   'load-older', 'thread-click', 'reply-from-thread-dbclick',
   'drag-over', 'drag-drop', 'open-upload-modal', 'react',

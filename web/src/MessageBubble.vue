@@ -74,7 +74,9 @@ const reactionSummary = computed(() => reactionSummaryLine(props.message))
         >⋯</button>
         <article
           :data-message-id="message.id"
-          :class="['bubble', { mine: message.fromMe, deleted: message.deleted, call: isCallMessage(message), menuOpen: menuOpen, scheduled: message.scheduled }]""
+          :class="['bubble', { mine: message.fromMe, deleted: message.deleted, call: isCallMessage(message), menuOpen: menuOpen, scheduled: message.scheduled }]"
+          :title="message.scheduled ? 'לחיצה לעריכה' : undefined"
+          @click.stop="message.scheduled && emit('edit-scheduled', message.id)"
         >
         <div v-if=" isForwardedMessage(message)" class="forwarded-label">הועברה</div>
         <strong v-if="!message.fromMe" class="sender-line">

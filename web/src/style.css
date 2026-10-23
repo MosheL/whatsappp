@@ -1997,10 +1997,26 @@ button {
 .emoji-panel .emoji-search { border: 1px solid #d5e0db; border-radius: 5px; font-size: 12px; grid-column: 1 / -1; height: 28px; padding: 0 8px; width: 100% }
 .emoji-panel .emoji-empty { color: #66727b; font-size: 11px; grid-column: 1 / -1; text-align: center }
 
+/* Attach submenu (file / contact) above the composer */
+.attach-wrap { position: relative }
+.attach-menu { background: #ffffff; border: 1px solid #cfd7dc; border-radius: 8px; bottom: calc(100% + 8px); box-shadow: 0 8px 24px rgba(31, 41, 51, 0.16); display: flex; flex-direction: column; gap: 2px; min-width: 160px; padding: 4px; position: absolute; right: 0; z-index: 12 }
+.attach-menu button { background: transparent; border: 0; border-radius: 5px; color: #27343c; cursor: pointer; font-size: 13px; padding: 7px 10px; text-align: start; white-space: nowrap }
+.attach-menu button:hover { background: #eef4f2 }
+
+/* Send button group: schedule arrow + send */
+.send-group { align-items: center; display: flex; gap: 4px }
+.schedule-trigger { border: 1px solid #d5e0db; font-size: 12px; height: 26px; width: 26px }
+.schedule-trigger.active { background: #eef4f2; color: #128c7e }
+
 /* Send-later (schedule) panel */
 .schedule-panel { background: #ffffff; border: 1px solid #cfd7dc; border-radius: 8px; bottom: 78px; box-shadow: 0 8px 24px rgba(31, 41, 51, 0.16); display: flex; flex-direction: column; gap: 8px; left: 16px; padding: 10px; position: fixed; width: min(92vw, 340px); z-index: 12 }
 .schedule-panel .schedule-title { color: #128c7e; font-size: 13px }
 .schedule-panel .schedule-input { border: 1px solid #d5e0db; border-radius: 6px; font-size: 13px; height: 30px; padding: 0 8px }
+.schedule-panel .schedule-edit-row { align-items: center; display: flex; gap: 6px }
+.schedule-panel .schedule-edit-input { border: 1px solid #d5e0db; border-radius: 6px; flex: 1; font-size: 13px; height: 30px; min-width: 0; padding: 0 8px }
+.schedule-panel .schedule-item.editing { background: #eef4f2; border-color: #128c7e }
+.schedule-panel .schedule-edit { background: transparent; border: 0; cursor: pointer; font-size: 13px; height: 26px; line-height: 1; width: 26px }
+.schedule-panel .schedule-item .schedule-cancel { flex: 0 0 auto }
 .schedule-panel .schedule-send { align-self: flex-start }
 .schedule-panel .schedule-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto }
 .schedule-panel .schedule-item { align-items: center; background: #f2f7f5; border: 1px solid #d5e0db; border-radius: 6px; display: flex; gap: 8px; padding: 6px 8px }

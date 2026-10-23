@@ -951,6 +951,41 @@ test('managedGroups matches the bot by LID or PN participant identity', async ()
   assert.deepEqual(groups.map((group: any) => group.jid), ['lid-group@g.us', 'pn-group@g.us'])
 })
 
+test('updateScheduledMessage requeues with the new text and time and emits', async () => {
+  const store: Record<string, string> = {}
+  const zset: Array<{ score: number, member: string }> = [
+    { score: 1000, member: JSON.stringify({ id: 's1', jid: '972501234567@s.whatsapp.net', text: 'before', sendAt: 1000, attempts: 0 }) },
+    { score: 2000, member: JSON.stringify({ id: 's2', jid: 'other@s.whatsapp.net', text: 'keep', sendAt: 2000, attempts: 0 }) }
+  ]
+  const emitted: any[] = []
+  const fakeBot: any = {
+    scheduledQueueKey: 'q',
+    authKey: 'auth',
+    events: { emit: (type: string, event: any) => emitted.push(event) },
+    redis: {
+      zrange: async () => zset.map(entry => entry.member),
+      zrem: async (_key: string, member: string) => {
+        const index = zset.findIndex(entry => entry.member === member)
+        if (index >= 0) zset.splice(index, 1)
+      },
+      zadd: async (_key: string, score: number, member: string) => {
+        zset.push({ score, member })
+      }
+    }
+  }
+
+  const result = await Bot.prototype.updateScheduledMessage.call(fakeBot, 's1', 'after', 5000)
+  assert.equal(result.id, 's1')
+  const updated = JSON.parse(zset.find(entry => entry.score === 5000)!.member)
+  assert.equal(updated.text, 'after')
+  assert.equal(updated.attempts, 0)
+  assert.equal(zset.length, 2)
+  assert.equal(emitted.length, 1)
+  assert.equal(emitted[0].type, 'scheduled')
+
+  await assert.rejects(() => Bot.prototype.updateScheduledMessage.call(fakeBot, 'missing', 'x', 6000), /לא נמצאה/)
+})
+
 test('getMessagesAround returns the anchor and context on each side', async () => {
   const jid = '972501234567@s.whatsapp.net'
   const ids = ['old', 'anchor', 'new']

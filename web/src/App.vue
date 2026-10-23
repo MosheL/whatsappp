@@ -3,6 +3,7 @@ import QRCode from 'qrcode'
 import { createRequestPool } from './request-pool.js'
 import { createSearchIndexer, matchesSearch, searchQuery } from './search-index.js'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { onClickOutside } from '@vueuse/core'
 import { useBlob } from './composables/useBlob.js'
 import { wsState, connectSocket, disconnectSocket, isOpen, isClosed } from './socket.js'
 import {
@@ -685,6 +686,9 @@ async function selectChat(jid, contactName) {
   reactionMessageId.value = ''
   replyTo.value = null
   emojiPanelOpen.value = false
+  showAttachMenu.value = false
+  showSchedule.value = false
+  cancelScheduledEdit()
   groupParticipants.value = []
   selectedMentions.value = []
   mentionQuery.value = null
@@ -1410,12 +1414,51 @@ function insertEmoji(emoji) {
   emojiPanelOpen.value = false
 }
 
+// -------- Attach submenu (file / contact) --------
+
+const showAttachMenu = ref(false)
+const attachMenuRef = ref(null)
+
+function toggleAttachMenu() {
+  showAttachMenu.value = !showAttachMenu.value
+  emojiPanelOpen.value = false
+  showSchedule.value = false
+}
+
+function attachFile() {
+  showAttachMenu.value = false
+  openUploadPicker()
+}
+
+function attachContact() {
+  showAttachMenu.value = false
+  openContactPicker()
+}
+
+onClickOutside(attachMenuRef, () => {
+  if (showAttachMenu.value) showAttachMenu.value = false
+})
+
 // -------- Send later (scheduled messages) --------
 
 const showSchedule = ref(false)
 const scheduleAt = ref('')
 const scheduledList = ref([])
 const scheduling = ref(false)
+// Editing an existing pending message (set while the form edits that item)
+const editingScheduledId = ref('')
+const scheduledEditText = ref('')
+const schedulePanelRef = ref(null)
+const scheduleTriggerRef = ref(null)
+
+// Close the schedule popup when clicking anywhere outside it (the arrow
+// trigger is excluded — it toggles on its own click)
+onClickOutside(schedulePanelRef, () => {
+  if (showSchedule.value) {
+    showSchedule.value = false
+    cancelScheduledEdit()
+  }
+}, { ignore: [scheduleTriggerRef] })
 
 function toLocalInputValue(date) {
   const pad = n => String(n).padStart(2, '0')
@@ -1425,10 +1468,33 @@ function toLocalInputValue(date) {
 function toggleSchedule() {
   showSchedule.value = !showSchedule.value
   emojiPanelOpen.value = false
+  showAttachMenu.value = false
   if (showSchedule.value) {
     scheduleAt.value = toLocalInputValue(new Date(Date.now() + 3600_000))
     loadScheduled()
+  } else {
+    cancelScheduledEdit()
   }
+}
+
+function startScheduledEdit(item) {
+  editingScheduledId.value = item.id
+  scheduledEditText.value = item.text
+  scheduleAt.value = toLocalInputValue(new Date(item.sendAt))
+  showSchedule.value = true
+  emojiPanelOpen.value = false
+  loadScheduled()
+}
+
+function cancelScheduledEdit() {
+  editingScheduledId.value = ''
+  scheduledEditText.value = ''
+}
+
+// Click on a pending bubble in the thread — open the panel editing it
+function onEditScheduled(id) {
+  const item = scheduledList.value.find(entry => entry.id === id)
+  if (item) startScheduledEdit(item)
 }
 
 async function loadScheduled() {
@@ -1437,6 +1503,7 @@ async function loadScheduled() {
     const params = new URLSearchParams({ bot: selectedBot.value, jid: selectedChat.value })
     const data = await api(`/api/scheduled-messages?${params}`)
     scheduledList.value = data.messages || []
+    if (editingScheduledId.value && !scheduledList.value.some(entry => entry.id === editingScheduledId.value)) cancelScheduledEdit()
   } catch {
     scheduledList.value = []
   }
@@ -1445,8 +1512,10 @@ async function loadScheduled() {
 async function scheduleMessage() {
   if (!selectedChat.value || scheduling.value) return
   const sendAt = scheduleAt.value ? new Date(scheduleAt.value).getTime() : 0
-  if (!text.value.trim()) {
-    Toast.warning('כתבו הודעה לתיבת הטקסט קודם')
+  const editing = Boolean(editingScheduledId.value)
+  const bodyText = editing ? scheduledEditText.value.trim() : text.value.trim()
+  if (!bodyText) {
+    Toast.warning(editing ? 'כתבו טקסט להודעה' : 'כתבו הודעה לתיבת הטקסט קודם')
     return
   }
   if (!sendAt || sendAt <= Date.now()) {
@@ -1455,13 +1524,23 @@ async function scheduleMessage() {
   }
   scheduling.value = true
   try {
-    await api('/api/schedule-message', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bot: selectedBot.value, jid: selectedChat.value, text: text.value, sendAt })
-    })
-    text.value = ''
-    Toast.success('ההודעה תישלח בזמן שנבחר')
+    if (editing) {
+      await api('/api/scheduled-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bot: selectedBot.value, id: editingScheduledId.value, text: bodyText, sendAt })
+      })
+      cancelScheduledEdit()
+      Toast.success('ההודעה המתוזמנת עודכנה')
+    } else {
+      await api('/api/schedule-message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bot: selectedBot.value, jid: selectedChat.value, text: bodyText, sendAt })
+      })
+      text.value = ''
+      Toast.success('ההודעה תישלח בזמן שנבחר')
+    }
     loadScheduled()
   } catch (err) {
     Toast.error(err.message)
@@ -1478,6 +1557,7 @@ async function cancelScheduled(item) {
       body: JSON.stringify({ bot: selectedBot.value, id: item.id })
     })
     scheduledList.value = scheduledList.value.filter(entry => entry.id !== item.id)
+    if (editingScheduledId.value === item.id) cancelScheduledEdit()
   } catch (err) {
     Toast.error(err.message)
   }
@@ -1662,7 +1742,9 @@ function onKeydown(event) {
     reactionMessageId.value = ''
     replyTo.value = null
     emojiPanelOpen.value = false
+    showAttachMenu.value = false
     showSchedule.value = false
+    cancelScheduledEdit()
   }
   const target = event.target
   const isEditing = target?.matches?.('input, textarea, select, [contenteditable="true"]')
@@ -1962,6 +2044,7 @@ onUnmounted(() => {
         @toggle-message-menu="toggleMessageMenu"
         @set-message-menu="setMessageMenu"
         @set-reaction-menu="setReactionMenu"
+        @edit-scheduled="onEditScheduled"
         @reply-message="replyMessage"
         @reply-private="replyPrivate"
         @forward-message="openForwardPopup"
@@ -2031,12 +2114,16 @@ onUnmounted(() => {
         <p v-if="isReadOnly" class="read-only-hint">הקבוצה לקריאה בלבד — רק מנהלים יכולים לשלוח הודעות</p>
         <form class="text-form" @submit.prevent="sendText">
           <div class="composer-actions">
-            <button class="action-button" type="button" :disabled="!selectedChat || isReadOnly" title="צרף קובץ" @click="openUploadPicker">📎</button>
-            <button class="action-button" type="button" :disabled="!selectedChat || isReadOnly" title="שלח איש קשר" @click="openContactPicker">👤</button>
+            <div ref="attachMenuRef" class="attach-wrap">
+              <button class="action-button" type="button" :disabled="!selectedChat || isReadOnly" :class="{ active: showAttachMenu }" title="צרף" @click.stop="toggleAttachMenu">📎</button>
+              <div v-if="showAttachMenu" class="attach-menu">
+                <button type="button" @click="attachFile">📄 צרף קובץ</button>
+                <button type="button" @click="attachContact">👤 שלח איש קשר</button>
+              </div>
+            </div>
             <button class="action-button emoji-action" type="button" :disabled="!selectedChat || isReadOnly" title="אימוג׳י" @click.stop="toggleEmojiPanel">
               ☺
             </button>
-            <button class="action-button" type="button" :disabled="!selectedChat || isReadOnly" title="שליחה מאוחרת" @click.stop="toggleSchedule">⏰</button>
           </div>
           <input ref="fileInputRef" class="hidden-file-input" type="file" multiple @change="onFile" />
           <textarea
@@ -2061,7 +2148,18 @@ onUnmounted(() => {
               <strong>{{ participant.name }}</strong>
             </button>
           </div>
-          <button type="submit" :disabled="!selectedChat || busy || isReadOnly">שלח</button>
+          <div class="send-group">
+            <button
+              ref="scheduleTriggerRef"
+              class="action-button schedule-trigger"
+              type="button"
+              :class="{ active: showSchedule }"
+              :disabled="!selectedChat || isReadOnly"
+              title="שליחה מאוחרת"
+              @click.stop="toggleSchedule"
+            >▾</button>
+            <button type="submit" :disabled="!selectedChat || busy || isReadOnly">שלח</button>
+          </div>
         </form>
       </footer>
     </section>
@@ -2070,16 +2168,27 @@ onUnmounted(() => {
   <Toaster />
 
   <Teleport to="body">
-    <div v-if="showSchedule" class="schedule-panel" @mousedown.stop @click.stop>
-      <strong class="schedule-title">שליחה מאוחרת</strong>
+    <div v-if="showSchedule" ref="schedulePanelRef" class="schedule-panel" @mousedown.stop @click.stop>
+      <strong class="schedule-title">{{ editingScheduledId ? 'עריכת הודעה מתוזמנת' : 'שליחה מאוחרת' }}</strong>
+      <div v-if="editingScheduledId" class="schedule-edit-row">
+        <input v-model="scheduledEditText" class="schedule-edit-input" type="text" placeholder="הודעה" dir="auto" @keydown.enter.prevent="scheduleMessage" />
+        <button type="button" class="schedule-cancel" title="בטל עריכה" @click="cancelScheduledEdit">×</button>
+      </div>
       <input v-model="scheduleAt" class="schedule-input" type="datetime-local" :min="toLocalInputValue(new Date())" />
-      <button type="button" class="light-button schedule-send" :disabled="scheduling" @click="scheduleMessage">{{ scheduling ? 'שומר…' : 'שלח מאוחר יותר' }}</button>
+      <button type="button" class="light-button schedule-send" :disabled="scheduling || (editingScheduledId && !scheduledEditText.trim())" @click="scheduleMessage">
+        {{ scheduling ? 'שומר…' : editingScheduledId ? 'עדכן' : 'שלח מאוחר יותר' }}
+      </button>
       <div v-if="scheduledList.length" class="schedule-list">
-        <div v-for="item in scheduledList" :key="item.id" class="schedule-item">
+        <div
+          v-for="item in scheduledList"
+          :key="item.id"
+          :class="['schedule-item', { editing: editingScheduledId === item.id }]"
+        >
           <div class="schedule-item-copy">
             <span dir="auto">{{ item.text }}</span>
             <small>{{ formatDateFull(item.sendAt) }}</small>
           </div>
+          <button type="button" class="schedule-edit" title="ערוך" @click="startScheduledEdit(item)">✏️</button>
           <button type="button" class="schedule-cancel" title="בטל" @click="cancelScheduled(item)">×</button>
         </div>
       </div>
