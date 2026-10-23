@@ -333,13 +333,10 @@ button {
 .menu-read-toggle input:checked + .switch::after { transform: translateX(-14px) }
 
 .menu-header .menu-mark-read {
-  color: #0b8fdc;
   flex: 0 0 auto;
   height: 28px;
   width: 28px;
 }
-
-.menu-header .menu-mark-read:hover:not(:disabled) { background: #e0e6ea; color: #0b8fdc }
 
 .menu-mark-read .tick-icon { display: block; height: 11px; width: 18px }
 
