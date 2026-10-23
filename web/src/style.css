@@ -2020,9 +2020,9 @@ button {
 @supports (top: anchor(top)) {
   .schedule-panel {
     bottom: auto;
-    left: auto;
+    right: auto;
     position-anchor: --schedule-button;
-    right: anchor(right);
+    left: anchor(left);
     top: anchor(top);
     transform: translateY(calc(-100% - 10px));
   }
