@@ -624,6 +624,21 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
+  // -------- Groups the bot administers (for "add user to group" pickers) --------
+  if (req.method === 'GET' && url.pathname === '/api/managed-groups') {
+    const bot = bots.get(url.searchParams.get('bot') || '')
+    if (!bot) {
+      sendJson(res, 404, { error: 'לקוח לא נמצא' })
+      return
+    }
+    try {
+      sendJson(res, 200, { groups: await bot.managedGroups() })
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+    }
+    return
+  }
+
   // -------- Share link management (UI session required) --------
   if (req.method === 'GET' && url.pathname === '/api/shares') {
     const bot = bots.get(url.searchParams.get('bot') || '')

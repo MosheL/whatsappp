@@ -8,7 +8,7 @@ import {
   mediaFileName, mediaPreviewStyle, mediaSizeStyle, hasMediaPreview,
   mediaActionLabel, senderNumberLabel, isCallMessage,
   isContactMessage, contactDisplayName, contactPhone, hasMultipleContacts, contactEntryPhone,
-  shouldShowMessageStatus, isMyReaction, messageReactions,
+  shouldShowMessageStatus, isMyReaction, messageReactions, reactionSummaryLine,
   reactionUserKey, formatMessageText,
   mediaKindFromMime, isForwardedMessage, linkPreviewHref, linkPreviewHost, linkPreviewImageStyle,
   isInteractiveMessage, isLocationMessage, interactiveTypeLabel, isUnsupportedMessage, isMaskedMessage, isAlbumMessage, albumCountLabel, canTranscribe
@@ -29,12 +29,13 @@ const props = defineProps({
   actions: { type: Object, required: true }
 })
 // One stable action table; state affecting a bubble is passed separately.
-const { emit, beginBubbleDrag, beginMediaDrag, toggleMessageMenu, mediaUrl,
+const { emit, beginBubbleDrag, beginMediaDrag, toggleMessageMenu, openMessageMenu, scheduleMenuClose, mediaUrl,
   loadMedia, finishMediaLoad, copyInteractiveCode, sendButtonReply, transcribeMedia } = props.actions
 const formattedText = computed(() => formatMessageText(props.message.text || props.message.type))
 const formattedBody = computed(() => formatMessageText(props.message.interactiveData?.body || ''))
 const displayTime = computed(() => formatTime(props.message.timestamp))
 const fullTime = computed(() => formatDateFull(props.message.timestamp))
+const reactionSummary = computed(() => reactionSummaryLine(props.message))
 </script>
 
 <template>
@@ -67,6 +68,8 @@ const fullTime = computed(() => formatDateFull(props.message.timestamp))
           :style="{ '--anchor-name': `--mm-${message.id.replace(/[^a-zA-Z0-9]/g, '-')}` }"
           type="button"
           title="פעולות"
+          @mouseenter="openMessageMenu(message)"
+          @mouseleave="scheduleMenuClose()"
           @click.stop="toggleMessageMenu($event, message)"
         >⋯</button>
         <article
@@ -398,6 +401,7 @@ const fullTime = computed(() => formatDateFull(props.message.timestamp))
           >
             {{ reaction.text }}
           </button>
+          <div v-if="reactionSummary" class="reaction-summary" dir="auto" :title="reactionSummary">{{ reactionSummary }}</div>
         </div>
         <span class="message-meta">
           <time :title="fullTime">{{ displayTime }}</time>

@@ -749,8 +749,9 @@ async function markAllRead() {
 }
 
 // Open the selected conversation's full-resolution avatar in a new tab.
+// Only when the small avatar actually rendered as an image (no 404 / non-image).
 function openChatAvatar() {
-  if (!selectedChat.value || !selectedBot.value) return
+  if (!selectedChat.value || !selectedBot.value || !avatarLoaded.value) return
   const url = `/api/avatar?size=large&v=${AVATAR_VERSION}&bot=${encodeURIComponent(selectedBot.value)}&jid=${encodeURIComponent(selectedChat.value)}`
   window.open(url, '_blank', 'noopener')
 }
@@ -1096,6 +1097,25 @@ function toggleMessageMenu(message) {
   reactionMessageId.value = ''
 }
 
+// Hover-driven open/close of the message menu (⋯ button and the menu itself).
+function setMessageMenu(message) {
+  if (loadingMessages.value) return
+  if (!message) {
+    actionMessageId.value = ''
+    reactionMessageId.value = ''
+    return
+  }
+  actionMessageId.value = message.id
+  if (reactionMessageId.value && reactionMessageId.value !== message.id) reactionMessageId.value = ''
+}
+
+// Hover-driven open of the emoji picker (אמוג'י button inside the menu).
+function setReactionMenu(message) {
+  if (loadingMessages.value) return
+  actionMessageId.value = message.id
+  reactionMessageId.value = message.id
+}
+
 async function sendContact() {
   if (!selectedChat.value || !selectedContactForSend.value) return
   const contact = selectedContactForSend.value
@@ -1298,10 +1318,6 @@ async function deleteMessage(message, options = {}) {
   } catch (err) {
     error.value = err.message
   }
-}
-
-function toggleReactionMenu(message) {
-  reactionMessageId.value = reactionMessageId.value === message.id ? '' : message.id
 }
 
 async function reactToMessage(message, emoji) {
@@ -1821,7 +1837,7 @@ onUnmounted(() => {
       @drop.prevent="onDropFile"
     >
       <header class="conversation-head">
-        <img :key="selectedChat + AVATAR_VERSION" :src="selectedChat && getAvatarCache(selectedChat) !== false ? `/api/avatar?v=${AVATAR_VERSION}&bot=${encodeURIComponent(selectedBot)}&jid=${encodeURIComponent(selectedChat)}` : ''" alt="" class="large-avatar image" loading="lazy" title="הצג תמונת פרופיל בגודל מלא" @click="openChatAvatar" @error="avatarLoaded = false; setAvatarCache(selectedChat, false); $event.target.style.display='none'" @load="avatarLoaded = true; setAvatarCache(selectedChat, true)" />
+        <img :key="selectedChat + AVATAR_VERSION" :src="selectedChat && getAvatarCache(selectedChat) !== false ? `/api/avatar?v=${AVATAR_VERSION}&bot=${encodeURIComponent(selectedBot)}&jid=${encodeURIComponent(selectedChat)}` : ''" alt="" class="large-avatar image" draggable="false" loading="lazy" title="הצג תמונת פרופיל בגודל מלא" @click="openChatAvatar" @error="avatarLoaded = false; setAvatarCache(selectedChat, false); $event.target.style.display='none'" @load="avatarLoaded = true; setAvatarCache(selectedChat, true)" />
         <span :class="['large-avatar', { 'avatar-loaded': avatarLoaded }]" title="הצגה תמונת פרופיל בגודל מלא" @click="openChatAvatar">{{ currentChat ? initials(currentChat) : (selectedChat || '?').slice(0, 2) }}</span>
         <div class="conversation-head-copy" title="פרטי שיחה" @click="showChatInfo = true">
           <h1>{{ chatTitle }}</h1>
@@ -1848,10 +1864,11 @@ onUnmounted(() => {
         ref="threadRef"
         :emojis="emojis"
         @toggle-message-menu="toggleMessageMenu"
+        @set-message-menu="setMessageMenu"
+        @set-reaction-menu="setReactionMenu"
         @reply-message="replyMessage"
         @reply-private="replyPrivate"
         @forward-message="openForwardPopup"
-        @toggle-reaction-menu="toggleReactionMenu"
         @delete-message="deleteMessage"
         @load-older="loadOlderMessages"
         @mention-click="(jid) => onMentionClick(jid)"

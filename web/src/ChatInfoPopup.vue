@@ -347,6 +347,10 @@ watch(() => props.chat, (chat) => {
   actionError.value = ''
   avatarFailed.value = false
   showAddModal.value = false
+  showGroupsModal.value = false
+  managedGroupList.value = []
+  groupsLoading.value = false
+  addingGroup.value = ''
   contactSearch.value = ''
   editingName.value = false
   editingDesc.value = false
@@ -378,6 +382,7 @@ watch(() => props.chat, (chat) => {
           :src="avatarSrc()"
           alt=""
           class="chat-info-avatar image"
+          draggable="false"
           title="הצג בגודל מלא"
           @click="openOriginalAvatar"
           @error="onAvatarError"
@@ -458,6 +463,12 @@ watch(() => props.chat, (chat) => {
       <div v-if="isGroup" class="chat-info-add-trigger">
         <button type="button" class="chat-info-action-btn chat-info-add-member-btn" @click="openAddModal">
           ➕ הוסף משתמש
+        </button>
+      </div>
+      <!-- Add this user to a group the bot manages -->
+      <div v-else-if="chat?.phoneNumber" class="chat-info-add-trigger">
+        <button type="button" class="chat-info-action-btn chat-info-add-member-btn" @click="openGroupsModal">
+          ➕ הוסף לקבוצה
         </button>
       </div>
       <p v-if="actionError" class="chat-info-error">{{ actionError }}</p>
@@ -578,6 +589,36 @@ watch(() => props.chat, (chat) => {
           </div>
         </div>
 
+        <p v-if="actionError" class="chat-info-error chat-info-modal-error">{{ actionError }}</p>
+      </div>
+    </div>
+
+    <!-- Add-to-group modal: pick one of the groups the bot manages -->
+    <div v-if="showGroupsModal" class="chat-info-modal-backdrop" @mousedown.self="closeGroupsModal">
+      <div class="chat-info-modal" @mousedown.stop>
+        <header class="chat-info-modal-head">
+          <strong>הוסף את {{ subject || chat?.name || chat?.jid }} לקבוצה</strong>
+          <button type="button" class="chat-info-modal-close" @click="closeGroupsModal" title="סגור" aria-label="סגור">×</button>
+        </header>
+        <div class="chat-info-modal-body">
+          <p v-if="groupsLoading" class="chat-info-empty">טוען…</p>
+          <div v-else class="chat-info-contacts-list">
+            <p v-if="!managedGroupList.length" class="chat-info-empty">אין קבוצות בניהולך</p>
+            <button
+              v-for="group in managedGroupList"
+              :key="group.jid"
+              type="button"
+              class="chat-info-contact"
+              @click="addToGroup(group)"
+            >
+              <span class="chat-info-participant-avatar">👥</span>
+              <div class="chat-info-participant-copy">
+                <strong dir="auto">{{ group.subject }}</strong>
+              </div>
+              <span class="chat-info-contact-add">{{ addingGroup === group.jid ? 'מוסיף…' : '+' }}</span>
+            </button>
+          </div>
+        </div>
         <p v-if="actionError" class="chat-info-error chat-info-modal-error">{{ actionError }}</p>
       </div>
     </div>

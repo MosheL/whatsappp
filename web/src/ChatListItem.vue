@@ -76,6 +76,7 @@ const previewText = computed(() => props.chat.lastMessage || '')
         :src="avatarSrc"
         alt=""
         class="avatar-image"
+        draggable="false"
         loading="lazy"
         decoding="async"
         @load="$event.target.classList.add('loaded'); setAvatarCache(props.chat.jid, true)"

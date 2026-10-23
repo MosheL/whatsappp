@@ -1052,6 +1052,22 @@ export class Bot {
    * (only group admins can read the invite code) — callers treat both as
    * "link not available".
    */
+  /**
+   * Groups the bot administers (admin or superadmin), for "add to group" pickers.
+   */
+  async managedGroups(): Promise<Array<{ jid: string; subject: string }>> {
+    if (!this.sock) throw new Error('Socket not connected')
+    const groups = await this.sock.groupFetchAllParticipating()
+    const ownId = String(this.id || this.sock.user?.id || '').split(':')[0].split('@')[0]
+    const result: Array<{ jid: string; subject: string }> = []
+    for (const group of Object.values(groups || {})) {
+      const me = (group.participants || []).find(participant =>
+        String(participant.id || '').split(':')[0].split('@')[0] === ownId)
+      if (me?.admin) result.push({ jid: group.id, subject: group.subject || group.id })
+    }
+    return result.sort((a, b) => a.subject.localeCompare(b.subject, 'he'))
+  }
+
   async groupInviteLink(jid: string): Promise<string> {
     if (!this.sock) throw new Error('Socket not connected')
     jid = this.contactCache.resolveOutgoingJid(jid)

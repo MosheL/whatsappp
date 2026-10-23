@@ -16,6 +16,7 @@ import {
   linkPreviewHost,
   messageDeliveryState,
   messageReactions,
+  reactionSummaryLine,
   messagePreview
 } from '../web/src/message-renderer.js'
 
@@ -40,6 +41,27 @@ test('keeps reaction text payloads intact', () => {
     reactions: [{ userJid: 'me', sender: 'me', text: 'ok', timestamp: 1 }]
   })
   assert.equal(reactions[0].text, 'ok')
+})
+
+test('summarizes reactions with first names under 3 distinct emojis', () => {
+  assert.equal(reactionSummaryLine({
+    reactions: [
+      { userJid: 'a', sender: 'moshe cohen', text: '👍', timestamp: 1 },
+      { userJid: 'b', sender: 'arye levy', text: '👍', timestamp: 2 },
+      { userJid: 'me', sender: 'אני', text: '🤦', timestamp: 3 }
+    ]
+  }), '👍: moshe, arye  🤦: אני')
+})
+
+test('hides the reaction summary at 3 or more distinct emojis', () => {
+  assert.equal(reactionSummaryLine({
+    reactions: [
+      { userJid: 'a', sender: 'a', text: '👍', timestamp: 1 },
+      { userJid: 'b', sender: 'b', text: '❤️', timestamp: 2 },
+      { userJid: 'c', sender: 'c', text: '😮', timestamp: 3 }
+    ]
+  }), '')
+  assert.equal(reactionSummaryLine({ reactions: [] }), '')
 })
 
 test('escapes HTML in reply previews', () => {

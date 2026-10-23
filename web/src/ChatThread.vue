@@ -90,8 +90,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits([
-  'select-chat', 'toggle-message-menu', 'reply-message',
-  'toggle-reaction-menu', 'delete-message',
+  'select-chat', 'toggle-message-menu', 'set-message-menu', 'set-reaction-menu', 'reply-message',
+  'delete-message',
   'load-older', 'thread-click', 'reply-from-thread-dbclick',
   'drag-over', 'drag-drop', 'open-upload-modal', 'react',
   'scroll-to-message', 'message-update', 'typing-expired', 'error',
@@ -328,7 +328,7 @@ function sendButtonReply(message, btn, index) {
   emit('button-reply', { jid: message.jid, text: btn.text, buttonId: btn.id || '', selectedIndex: index, messageId: message.id })
 }
 
-const bubbleActions = { emit, beginBubbleDrag, beginMediaDrag, toggleMessageMenu, mediaUrl,
+const bubbleActions = { emit, beginBubbleDrag, beginMediaDrag, toggleMessageMenu, openMessageMenu, scheduleMenuClose, mediaUrl,
   loadMedia, finishMediaLoad, copyInteractiveCode, sendButtonReply, transcribeMedia }
 
 // Keep loaded history in the DOM for native find-in-page. CSS skips off-screen
@@ -368,6 +368,38 @@ function handleThreadScroll() {
   updateNearBottom()
 
 }
+
+// -------- Hover-open message menu --------
+// The ⋯ button opens its menu on hover; a small grace delay lets the pointer
+// travel from the button into the (teleported) menu without closing it.
+let menuCloseTimer = null
+
+function cancelMenuClose() {
+  if (menuCloseTimer) {
+    clearTimeout(menuCloseTimer)
+    menuCloseTimer = null
+  }
+}
+
+function scheduleMenuClose() {
+  cancelMenuClose()
+  menuCloseTimer = setTimeout(() => {
+    menuCloseTimer = null
+    emit('set-message-menu', null)
+  }, 300)
+}
+
+function openMessageMenu(message) {
+  cancelMenuClose()
+  emit('set-message-menu', message)
+}
+
+function openReactionMenu(message) {
+  cancelMenuClose()
+  emit('set-reaction-menu', message)
+}
+
+onUnmounted(() => cancelMenuClose())
 
 function toggleMessageMenu(event, message) {
   emit('toggle-message-menu', message)
@@ -508,14 +540,16 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
       <div
         v-if="actionMessage && actionMessageId"
         ref="messageMenuRef"
-        class="message-menu message-menu-portal"
+        :class="['message-menu', 'message-menu-portal', { mine: actionMessage.fromMe }]"
         :style="{ '--anchor-name': `--mm-${(actionMessage.id).replace(/[^a-zA-Z0-9]/g, '-')}` }"
+        @mouseenter="cancelMenuClose"
+        @mouseleave="scheduleMenuClose"
         @click.stop
       >
         <button type="button" @click="emit('reply-message', actionMessage)">השב</button>
         <button v-if="currentChat?.isGroup && !actionMessage.fromMe" type="button" @click="emit('reply-private', actionMessage)">השב בפרטי</button>
         <button v-if="isMessageEditable(actionMessage)" type="button" @click="emit('edit-message', actionMessage)">ערוך</button>
-        <button type="button" @click="emit('toggle-reaction-menu', actionMessage)">אמוג'י</button>
+        <button type="button" @mouseenter="openReactionMenu(actionMessage)" @click.stop="openReactionMenu(actionMessage)">אמוג'י</button>
         <button
           type="button"
           :title="actionMessage.deleted ? 'הסר מהמכשיר' : 'מחק לכולם (Shift+לחיצה = מחיקה מקומית)'"

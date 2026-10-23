@@ -297,6 +297,34 @@ export function reactionUserKey(reaction) {
 }
 
 /**
+ * First word of a reaction sender's display name ("Moshe Cohen" -> "Moshe").
+ */
+function reactionFirstName(sender) {
+  const name = String(sender || '').trim()
+  if (!name || name === 'אני') return 'אני'
+  return name.split(/\s+/)[0]
+}
+
+/**
+ * One-line summary of who reacted with what:
+ * "👍: moshe, arye · 🤦: david, yosef".
+ * Shown only when there are fewer than 3 distinct reactions; the caller
+ * keeps it on a single line (nowrap + ellipsis).
+ */
+export function reactionSummaryLine(message) {
+  const reactions = messageReactions(message)
+  if (!reactions.length) return ''
+  const byEmoji = new Map()
+  for (const reaction of reactions) {
+    const names = byEmoji.get(reaction.text) || []
+    names.push(reactionFirstName(reaction.sender))
+    byEmoji.set(reaction.text, names)
+  }
+  if (byEmoji.size >= 3) return ''
+  return [...byEmoji.entries()].map(([emoji, names]) => `${emoji}: ${names.join(', ')}`).join('  ')
+}
+
+/**
  * Format message text with bold, monospace, strikethrough, links, emails and mentions.
  *
  * Inline markers:
