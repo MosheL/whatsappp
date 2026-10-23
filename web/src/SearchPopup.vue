@@ -201,8 +201,17 @@ function closeContext() {
   replyText.value = ''
 }
 
+// Message elements per id, maintained via template refs (Vue-style lookup
+// instead of querySelector when jumping to a match).
+const contextEls = new Map()
+
+function setContextEl(id, el) {
+  if (el) contextEls.set(id, el)
+  else contextEls.delete(id)
+}
+
 function scrollToMatch(id) {
-  const el = contextScrollRef.value?.querySelector(`[data-message-id="${id}"]`)
+  const el = contextEls.get(id)
   if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' })
 }
 
@@ -471,6 +480,7 @@ function senderName(message) {
           <template v-for="(message, index) in context.messages" :key="message.id">
             <div v-if="showDateCaption(index)" class="search-popup-date-caption">{{ formatDateCaption(message.timestamp) }}</div>
             <div
+              :ref="el => setContextEl(message.id, el)"
               :data-message-id="message.id"
               :class="['search-popup-message', { mine: message.fromMe, match: message.id === matchId }]"
             >

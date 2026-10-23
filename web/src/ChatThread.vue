@@ -422,13 +422,22 @@ function performScrollToBottom() {
   })
 }
 
+// Row elements per message id, maintained via template refs (Vue-style
+// lookup instead of querySelector when jumping to a message).
+const messageRowEls = new Map()
+
+function setMessageRowEl(id, instance) {
+  if (instance) messageRowEls.set(id, instance.$el)
+  else messageRowEls.delete(id)
+}
+
 function scrollToMessage(id) {
   if (!id || !threadEl.value) return
   const index = props.messages.findIndex(message => message.id === id)
   if (index < 0) return
   isNearBottom.value = false
   nextTick(() => {
-    const el = threadEl.value?.querySelector(`[data-message-id="${id}"]`)
+    const el = messageRowEls.get(id)
     if (!el) return
     el.scrollIntoView({ block: 'center', behavior: 'smooth' })
     el.classList.add('highlight-message')
@@ -485,6 +494,7 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
     <MessageBubble
       v-for="{ message, index: mi } in (loadingMessages ? [] : visibleMessages)"
       :key="message.id"
+      :ref="instance => setMessageRowEl(message.id, instance)"
       :message="message"
       :date-label="showDateCaption(mi) ? dateCaption(mi) : ''"
       :menu-open="actionMessageId === message.id"

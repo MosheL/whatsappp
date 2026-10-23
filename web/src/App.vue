@@ -1829,8 +1829,13 @@ function loadFaviconBase() {
   })
 }
 
+// The favicon <link> lives in index.html's <head> (outside the Vue tree), so
+// it cannot be a template ref — resolve it once and cache it.
+let faviconLink = null
+
 async function updateFaviconBadge(count) {
-  const link = document.querySelector('link[rel="icon"]')
+  faviconLink ||= document.querySelector('link[rel="icon"]')
+  const link = faviconLink
   if (!link) return
   const img = await loadFaviconBase()
   const canvas = document.createElement('canvas')
