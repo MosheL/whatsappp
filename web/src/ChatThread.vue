@@ -9,8 +9,7 @@ import {
   mediaFileName, mediaPreviewStyle, mediaSizeStyle, hasMediaPreview,
   mediaActionLabel, senderNumberLabel, isCallMessage,
   isContactMessage, contactDisplayName, contactPhone, hasMultipleContacts, contactEntryPhone,
-  shouldShowMessageStatus, isMyReaction, messageReactions,
-  reactionUserKey, formatMessageText,
+  shouldShowMessageStatus, formatMessageText,
   mediaKindFromMime, isForwardedMessage, linkPreviewHref, linkPreviewHost, linkPreviewImageStyle,
   isInteractiveMessage, isLocationMessage, interactiveTypeLabel, isUnsupportedMessage
 } from './message-renderer.js'

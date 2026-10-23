@@ -307,22 +307,23 @@ function reactionFirstName(sender) {
 }
 
 /**
- * One-line summary of who reacted with what:
- * "👍: moshe, arye · 🤦: david, yosef".
- * Shown only when there are fewer than 3 distinct reactions; the caller
- * keeps it on a single line (nowrap + ellipsis).
+ * Reactions grouped per emoji, for the reaction pills: each entry carries the
+ * emoji, the first names of everyone who used it, and whether one of them is
+ * the user. `showNames` is set only while there are fewer than 3 distinct
+ * emojis — with more, pills fall back to emoji-only (compact).
  */
-export function reactionSummaryLine(message) {
+export function groupedReactions(message) {
   const reactions = messageReactions(message)
-  if (!reactions.length) return ''
+  if (!reactions.length) return []
   const byEmoji = new Map()
   for (const reaction of reactions) {
-    const names = byEmoji.get(reaction.text) || []
-    names.push(reactionFirstName(reaction.sender))
-    byEmoji.set(reaction.text, names)
+    const entry = byEmoji.get(reaction.text) || { text: reaction.text, names: [], mine: false }
+    if (isMyReaction(reaction)) entry.mine = true
+    entry.names.push(reactionFirstName(reaction.sender))
+    byEmoji.set(reaction.text, entry)
   }
-  if (byEmoji.size >= 3) return ''
-  return [...byEmoji.entries()].map(([emoji, names]) => `${emoji}: ${names.join(', ')}`).join('  ')
+  const showNames = byEmoji.size < 3
+  return [...byEmoji.values()].map(entry => ({ ...entry, showNames }))
 }
 
 /**

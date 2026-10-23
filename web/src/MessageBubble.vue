@@ -8,8 +8,8 @@ import {
   mediaFileName, mediaPreviewStyle, mediaSizeStyle, hasMediaPreview,
   mediaActionLabel, senderNumberLabel, isCallMessage,
   isContactMessage, contactDisplayName, contactPhone, hasMultipleContacts, contactEntryPhone,
-  shouldShowMessageStatus, isMyReaction, messageReactions, reactionSummaryLine,
-  reactionUserKey, formatMessageText,
+  shouldShowMessageStatus, groupedReactions,
+  formatMessageText,
   mediaKindFromMime, isForwardedMessage, linkPreviewHref, linkPreviewHost, linkPreviewImageStyle,
   isInteractiveMessage, isLocationMessage, interactiveTypeLabel, isUnsupportedMessage, isMaskedMessage, isAlbumMessage, albumCountLabel, canTranscribe
 } from './message-renderer.js'
@@ -35,7 +35,6 @@ const formattedText = computed(() => formatMessageText(props.message.text || pro
 const formattedBody = computed(() => formatMessageText(props.message.interactiveData?.body || ''))
 const displayTime = computed(() => formatTime(props.message.timestamp))
 const fullTime = computed(() => formatDateFull(props.message.timestamp))
-const reactionSummary = computed(() => reactionSummaryLine(props.message))
 </script>
 
 <template>
@@ -394,16 +393,16 @@ const reactionSummary = computed(() => reactionSummaryLine(props.message))
         <small v-if="message.deleted" class="deleted-label">הודעה נמחקה</small>
         <div v-if="!message.deleted && message.reactions" class="message-reactions">
           <button
-            v-for="reaction in messageReactions(message)"
-            :key="reactionUserKey(reaction)"
+            v-for="group in groupedReactions(message)"
+            :key="group.text"
             type="button"
-            :class="{ mine: isMyReaction(reaction) }"
-            :title="isMyReaction(reaction) ? 'מחק תגובה' : reaction.sender"
-            @click="emit('react', message, reaction.text)"
+            :class="{ mine: group.mine }"
+            :title="group.mine ? 'מחק תגובה' : group.names.join(', ')"
+            @click="emit('react', message, group.text)"
           >
-            {{ reaction.text }}
+            <span class="reaction-emoji">{{ group.text }}</span>
+            <span v-if="group.showNames" class="reaction-names" dir="auto">{{ group.names.join(', ') }}</span>
           </button>
-          <div v-if="reactionSummary" class="reaction-summary" dir="auto" :title="reactionSummary">{{ reactionSummary }}</div>
         </div>
         <span class="message-meta">
           <span v-if="message.scheduled" class="scheduled-badge" title="מתוזמן">⏰</span>

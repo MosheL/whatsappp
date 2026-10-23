@@ -16,7 +16,7 @@ import {
   linkPreviewHost,
   messageDeliveryState,
   messageReactions,
-  reactionSummaryLine,
+  groupedReactions,
   messagePreview
 } from '../web/src/message-renderer.js'
 
@@ -43,25 +43,31 @@ test('keeps reaction text payloads intact', () => {
   assert.equal(reactions[0].text, 'ok')
 })
 
-test('summarizes reactions with first names under 3 distinct emojis', () => {
-  assert.equal(reactionSummaryLine({
+test('groups reactions per emoji with first names and mine flag', () => {
+  const groups = groupedReactions({
     reactions: [
       { userJid: 'a', sender: 'moshe cohen', text: '👍', timestamp: 1 },
       { userJid: 'b', sender: 'arye levy', text: '👍', timestamp: 2 },
       { userJid: 'me', sender: 'אני', text: '🤦', timestamp: 3 }
     ]
-  }), '👍: moshe, arye  🤦: אני')
+  })
+  assert.equal(groups.length, 2)
+  assert.deepEqual(groups[0], { text: '👍', names: ['moshe', 'arye'], mine: false, showNames: true })
+  assert.deepEqual(groups[1], { text: '🤦', names: ['אני'], mine: true, showNames: true })
 })
 
-test('hides the reaction summary at 3 or more distinct emojis', () => {
-  assert.equal(reactionSummaryLine({
+test('hides reaction names at 3 or more distinct emojis', () => {
+  const groups = groupedReactions({
     reactions: [
-      { userJid: 'a', sender: 'a', text: '👍', timestamp: 1 },
-      { userJid: 'b', sender: 'b', text: '❤️', timestamp: 2 },
-      { userJid: 'c', sender: 'c', text: '😮', timestamp: 3 }
+      { userJid: 'a', sender: 'a b', text: '👍', timestamp: 1 },
+      { userJid: 'b', sender: 'b c', text: '❤️', timestamp: 2 },
+      { userJid: 'c', sender: 'c d', text: '😮', timestamp: 3 }
     ]
-  }), '')
-  assert.equal(reactionSummaryLine({ reactions: [] }), '')
+  })
+  assert.equal(groups.length, 3)
+  assert.ok(groups.every(group => group.showNames === false))
+  assert.deepEqual(groups.map(group => group.text), ['👍', '❤️', '😮'])
+  assert.deepEqual(groupedReactions({ reactions: [] }), [])
 })
 
 test('escapes HTML in reply previews', () => {
