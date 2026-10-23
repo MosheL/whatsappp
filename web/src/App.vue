@@ -36,6 +36,12 @@ const messages = ref([])
 const selectedChat = ref('')
 const search = ref('')
 const showMenu = ref(false)
+const chatMenuRef = ref(null)
+
+// Collapse the menu popover when clicking outside it
+onClickOutside(chatMenuRef, () => {
+  if (showMenu.value) showMenu.value = false
+})
 const showArchived = ref(localStorage.getItem('wa-ui-show-archived') === 'true')
 const autoMarkRead = ref(localStorage.getItem('wa-ui-auto-mark-read') === 'true')
 const contacts = ref([])
@@ -1749,6 +1755,7 @@ function onKeydown(event) {
     emojiPanelOpen.value = false
     showAttachMenu.value = false
     showSchedule.value = false
+    showMenu.value = false
     cancelScheduledEdit()
   }
   const target = event.target
@@ -1981,7 +1988,7 @@ onUnmounted(() => {
         <strong>סריקה</strong>
       </section>
 
-      <div class="chat-menu">
+      <div ref="chatMenuRef" class="chat-menu">
         <div class="menu-header">
           <div class="menu-search-box">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5Zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14Z" fill="currentColor"/></svg>
