@@ -1118,6 +1118,7 @@ export class Bot {
     const id = `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
     const item = { id, jid, text, sendAt, attempts: 0 }
     await this.redis.zadd(this.scheduledQueueKey, sendAt, JSON.stringify(item))
+    this.events.emit('event', { type: 'scheduled', bot: this.authKey, jid })
     return { id, sendAt }
   }
 
@@ -1139,7 +1140,11 @@ export class Bot {
     const rows = await this.redis.zrange(this.scheduledQueueKey, 0, -1)
     for (const row of rows) {
       try {
-        if (JSON.parse(row)?.id === id) await this.redis.zrem(this.scheduledQueueKey, row)
+        const item = JSON.parse(row)
+        if (item?.id === id) {
+          await this.redis.zrem(this.scheduledQueueKey, row)
+          this.events.emit('event', { type: 'scheduled', bot: this.authKey, jid: item.jid })
+        }
       } catch {}
     }
   }
@@ -1160,6 +1165,7 @@ export class Bot {
       try {
         await this.sendText(item.jid, item.text)
         await this.redis.zrem(this.scheduledQueueKey, row)
+        this.events.emit('event', { type: 'scheduled', bot: this.authKey, jid: item.jid })
         console.log(`${this.label}: scheduled message sent to ${item.jid}`)
       } catch (err: any) {
         // Keep the message for the next tick, but give up after repeated failures

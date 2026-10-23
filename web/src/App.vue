@@ -459,6 +459,11 @@ async function handleSocketEvent(data) {
         scrollToBottom(data.message)
       }
     }
+    if (data.type === 'scheduled' && data.bot === selectedBot.value) {
+      // Scheduled list changed (scheduled / sent / cancelled) — refresh the
+      // pending bubbles in the thread if it's the open chat.
+      if (data.jid === selectedChat.value) loadScheduled()
+    }
     if (data.type === 'refresh' && data.bot === selectedBot.value) {
       // Reload contacts first so the contact-name override applies when chats load.
       await loadContacts(true)
@@ -509,6 +514,23 @@ function upsertMessage(message) {
   }
   messages.value = [...messages.value, message].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
 }
+
+// Real messages plus pending "send later" entries, rendered in the thread as
+// pending bubbles (clock icon + scheduled time instead of status ticks).
+const threadMessages = computed(() => {
+  if (!scheduledList.value.length) return messages.value
+  const pending = scheduledList.value.map(item => ({
+    id: item.id,
+    jid: item.jid,
+    fromMe: true,
+    sender: 'אני',
+    text: item.text,
+    type: 'conversation',
+    timestamp: item.sendAt,
+    scheduled: true
+  }))
+  return [...messages.value, ...pending].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+})
 
 function updateMessage(message) {
   const index = messages.value.findIndex(item => item.id === message.id)
@@ -675,6 +697,7 @@ async function selectChat(jid, contactName) {
     const data = await api(`/api/messages?bot=${encodeURIComponent(requestedBot)}&jid=${encodeURIComponent(jid)}&limit=200`)
     if (selectedBot.value !== requestedBot || selectedChat.value !== requestedJid || requestId !== messageLoadRequest) return
     messages.value = data.messages || []
+    loadScheduled()
     shouldSyncFromPhone = messages.value.length === 0
     if (autoMarkRead.value) {
       if (hadUnread) autoMarkChatRead(jid)
@@ -1925,7 +1948,7 @@ onUnmounted(() => {
       </header>
 
       <ChatThread
-        :messages="loadingMessages ? [] : messages"
+        :messages="loadingMessages ? [] : threadMessages"
         :selected-chat="selectedChat"
         :current-chat="currentChat"
         :loading-messages="loadingMessages"

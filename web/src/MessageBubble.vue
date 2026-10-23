@@ -48,7 +48,7 @@ const reactionSummary = computed(() => reactionSummaryLine(props.message))
         :class="['message-item', { mine: message.fromMe, menuOpen: menuOpen }]"
       >
         <span
-          v-show="!textSelected"
+          v-show="!textSelected && !message.scheduled"
           class="drag-handle"
           draggable="true"
           title="גרור להעברה"
@@ -63,8 +63,8 @@ const reactionSummary = computed(() => reactionSummaryLine(props.message))
           </svg>
         </span>
         <button
-          v-show="!textSelected"
-          :class="['message-menu-button', { open: menuOpen }]"
+          v-show="!textSelected && !message.scheduled"
+          :class="['message-menu-button', { open: menuOpen }]""
           :style="{ '--anchor-name': `--mm-${message.id.replace(/[^a-zA-Z0-9]/g, '-')}` }"
           type="button"
           title="פעולות"
@@ -74,7 +74,7 @@ const reactionSummary = computed(() => reactionSummaryLine(props.message))
         >⋯</button>
         <article
           :data-message-id="message.id"
-          :class="['bubble', { mine: message.fromMe, deleted: message.deleted, call: isCallMessage(message), menuOpen: menuOpen }]"
+          :class="['bubble', { mine: message.fromMe, deleted: message.deleted, call: isCallMessage(message), menuOpen: menuOpen, scheduled: message.scheduled }]""
         >
         <div v-if=" isForwardedMessage(message)" class="forwarded-label">הועברה</div>
         <strong v-if="!message.fromMe" class="sender-line">
@@ -404,6 +404,7 @@ const reactionSummary = computed(() => reactionSummaryLine(props.message))
           <div v-if="reactionSummary" class="reaction-summary" dir="auto" :title="reactionSummary">{{ reactionSummary }}</div>
         </div>
         <span class="message-meta">
+          <span v-if="message.scheduled" class="scheduled-badge" title="מתוזמן">⏰</span>
           <time :title="fullTime">{{ displayTime }}</time>
           <StatusTick
             v-if="shouldShowMessageStatus(message)"

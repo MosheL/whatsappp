@@ -256,6 +256,7 @@ function readReceiptCount(receipts) {
  */
 export function shouldShowMessageStatus(message) {
   if (isCallMessage(message)) return false
+  if (message.scheduled) return false
   return Boolean(message.fromMe)
 }
 
