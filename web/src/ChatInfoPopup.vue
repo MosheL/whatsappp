@@ -226,6 +226,58 @@ async function addContact(contact) {
   }
 }
 
+// -------- Add user to a group the bot manages (user chats only) --------
+
+const showGroupsModal = ref(false)
+const managedGroupList = ref([])
+const groupsLoading = ref(false)
+const addingGroup = ref('')
+
+function closeGroupsModal() {
+  showGroupsModal.value = false
+  addingGroup.value = ''
+  actionError.value = ''
+}
+
+async function openGroupsModal() {
+  if (groupsLoading.value) return
+  showGroupsModal.value = true
+  actionError.value = ''
+  managedGroupList.value = []
+  groupsLoading.value = true
+  try {
+    const params = new URLSearchParams({ bot: props.selectedBot })
+    const data = await api(`/api/managed-groups?${params}`)
+    managedGroupList.value = data.groups || []
+  } catch (err) {
+    actionError.value = err.message
+  } finally {
+    groupsLoading.value = false
+  }
+}
+
+async function addToGroup(group) {
+  if (addingGroup.value || !group?.jid) return
+  if (!props.chat?.phoneNumber) {
+    actionError.value = 'אין מספר טלפון למשתמש'
+    return
+  }
+  addingGroup.value = group.jid
+  actionError.value = ''
+  try {
+    await api('/api/group-add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bot: props.selectedBot, jid: group.jid, phone: props.chat.phoneNumber })
+    })
+    showGroupsModal.value = false
+  } catch (err) {
+    actionError.value = err.message
+  } finally {
+    addingGroup.value = ''
+  }
+}
+
 // -------- Share API links (group only) --------
 const shareLinks = ref([])
 const shareLoading = ref(false)
