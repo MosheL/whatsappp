@@ -54,10 +54,12 @@ button {
   align-items: center;
   background: #f7f9fa;
   border-bottom: 1px solid #d8dee4;
+  box-sizing: border-box;
   display: flex;
   gap: 12px;
+  height: 64px;
   min-height: 64px;
-  padding: 10px 12px;
+  padding: 8px 12px;
 }
 
 .read-only-hint { background: #fff3c4; border-radius: 8px; color: #8a6d00; font-size: 12px; margin: 0 0 6px; padding: 6px 10px; text-align: center }
@@ -690,8 +692,8 @@ button {
 }
 
 .conversation-head h1 {
-  font-size: 17px;
-  margin: 0 0 3px;
+  font-size: 16px;
+  margin: 0 0 1px;
 }
 
 .conversation-head p {
@@ -3064,7 +3066,7 @@ button {
 .conversation-head-copy {
   cursor: pointer;
   min-width: 0;
-  padding: 4px 6px;
+  padding: 2px 6px;
 }
 .conversation-head-copy:hover {
   background: #eef2f4;
