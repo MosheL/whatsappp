@@ -102,10 +102,6 @@ button {
   margin-inline-start: auto;
 }
 
-.search-toggle.active {
-  background: #166a5b;
-}
-
 .ws-pill {
   background: #e8ecef;
   border-radius: 999px;
@@ -1885,26 +1881,6 @@ button {
   align-items: center;
 }
 
-.action-button {
-  background: transparent;
-  border: 0;
-  color: #53636b;
-  font-size: 18px;
-  min-width: 34px;
-  padding: 4px 6px;
-  cursor: pointer;
-  border-radius: 4px;
-}
-
-.action-button:hover:not(:disabled) {
-  background: #e9f3f0;
-}
-
-.action-button:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
 .mention-suggestions {
   background: #ffffff;
   border: 1px solid #cfd7dc;
@@ -1956,8 +1932,6 @@ button {
 
 .emoji-action {
   anchor-name: --emoji-button;
-  min-width: 42px;
-  padding: 0;
 }
 
 .emoji-panel {
@@ -2002,8 +1976,23 @@ button {
 /* Attach submenu (file / contact) above the composer */
 .attach-wrap { position: relative }
 .attach-menu { background: #ffffff; border: 1px solid #cfd7dc; border-radius: 8px; bottom: calc(100% + 8px); box-shadow: 0 8px 24px rgba(31, 41, 51, 0.16); display: flex; flex-direction: column; gap: 2px; min-width: 160px; padding: 4px; position: absolute; right: 0; z-index: 12 }
-.attach-menu button { background: transparent; border: 0; border-radius: 5px; color: #27343c; cursor: pointer; font-size: 13px; min-height: 0; padding: 7px 10px; text-align: start; white-space: nowrap }
+.attach-menu button { align-items: center; background: transparent; border: 0; border-radius: 5px; color: #27343c; cursor: pointer; display: flex; font-size: 13px; gap: 8px; min-height: 0; padding: 7px 10px; text-align: start; white-space: nowrap }
+.attach-menu button svg { flex: 0 0 auto; height: 16px; width: 16px }
 .attach-menu button:hover { background: #eef4f2 }
+
+/* Shared circular ghost icon button (composer actions, search toggle).
+   The .composer-scoped selector duplicate keeps it above the generic
+   `.composer button` base style. */
+.icon-action,
+.composer .icon-action { align-items: center; background: transparent; border: 0; border-radius: 50%; color: #667781; cursor: pointer; display: inline-flex; height: 34px; justify-content: center; min-height: 0; padding: 0; transition: background 0.15s, color 0.15s; width: 34px }
+.icon-action svg,
+.composer .icon-action svg { display: block; height: 22px; width: 22px }
+.icon-action:hover:not(:disabled),
+.composer .icon-action:hover:not(:disabled) { background: #e0e6ea; color: #128c7e }
+.icon-action.active,
+.composer .icon-action.active { background: #128c7e; color: #ffffff }
+.icon-action:disabled,
+.composer .icon-action:disabled { opacity: 0.35; cursor: default }
 
 /* Send button group: send + schedule arrow. Note: scoped as .composer <class>
    so the rules outrank the generic `.composer button` base style. */

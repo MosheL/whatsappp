@@ -2026,7 +2026,9 @@ onUnmounted(() => {
             </span>
           </p>
         </div>
-        <button class="icon-button search-toggle" type="button" :class="{ active: showSearchPopup }" title="חיפוש בהודעות" @click="showSearchPopup = !showSearchPopup">🔍</button>
+        <button class="icon-action search-toggle" type="button" :class="{ active: showSearchPopup }" title="חיפוש בהודעות" aria-label="חיפוש בהודעות" @click="showSearchPopup = !showSearchPopup">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5Zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14Z" fill="currentColor"/></svg>
+        </button>
       </header>
 
       <ChatThread
@@ -2115,14 +2117,22 @@ onUnmounted(() => {
         <form class="text-form" @submit.prevent="sendText">
           <div class="composer-actions">
             <div ref="attachMenuRef" class="attach-wrap">
-              <button class="action-button" type="button" :disabled="!selectedChat || isReadOnly" :class="{ active: showAttachMenu }" title="צרף" @click.stop="toggleAttachMenu">📎</button>
+              <button class="icon-action" type="button" :disabled="!selectedChat || isReadOnly" :class="{ active: showAttachMenu }" title="צרף" aria-label="צרף" @click.stop="toggleAttachMenu">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 6v11.5c0 2.485-2.015 4.5-4.5 4.5s-4.5-2.015-4.5-4.5V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H9v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S6 2.79 6 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5Z" fill="currentColor"/></svg>
+              </button>
               <div v-if="showAttachMenu" class="attach-menu">
-                <button type="button" @click="attachFile">📄 צרף קובץ</button>
-                <button type="button" @click="attachContact">👤 שלח איש קשר</button>
+                <button type="button" @click="attachFile">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 6v11.5c0 2.485-2.015 4.5-4.5 4.5s-4.5-2.015-4.5-4.5V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H9v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S6 2.79 6 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5Z" fill="currentColor"/></svg>
+                  צרף קובץ
+                </button>
+                <button type="button" @click="attachContact">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4Zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Z" fill="currentColor"/></svg>
+                  שלח איש קשר
+                </button>
               </div>
             </div>
-            <button class="action-button emoji-action" type="button" :disabled="!selectedChat || isReadOnly" title="אימוג׳י" @click.stop="toggleEmojiPanel">
-              ☺
+            <button class="icon-action emoji-action" type="button" :disabled="!selectedChat || isReadOnly" :class="{ active: emojiPanelOpen }" title="אימוג׳י" aria-label="אימוג׳י" @click.stop="toggleEmojiPanel">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2ZM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8Zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5Zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11Zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5Z" fill="currentColor"/></svg>
             </button>
           </div>
           <input ref="fileInputRef" class="hidden-file-input" type="file" multiple @change="onFile" />
