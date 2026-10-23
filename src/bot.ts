@@ -1076,16 +1076,29 @@ export class Bot {
    */
   /**
    * Groups the bot administers (admin or superadmin), for "add to group" pickers.
+   * The bot's own participant entry may be recorded in LID or PN form (or both),
+   * depending on the group's addressing mode — so match against every known
+   * identity (id / lid / phoneNumber) of the account.
    */
   async managedGroups(): Promise<Array<{ jid: string; subject: string }>> {
     if (!this.sock) throw new Error('Socket not connected')
     const groups = await this.sock.groupFetchAllParticipating()
-    const ownId = String(this.id || this.sock.user?.id || '').split(':')[0].split('@')[0]
+    const bare = (value: unknown) => String(value || '').split(':')[0].split('@')[0]
+    const ownIds = new Set([
+      bare(this.id),
+      bare(this.sock.user?.lid),
+      bare(this.sock.user?.phoneNumber),
+      bare(this.sock.user?.id)
+    ].filter(Boolean))
     const result: Array<{ jid: string; subject: string }> = []
-    for (const group of Object.values(groups || {})) {
+    for (const group of Object.values(groups || {}) as any[]) {
       const me = (group.participants || []).find(participant =>
-        String(participant.id || '').split(':')[0].split('@')[0] === ownId)
-      if (me?.admin) result.push({ jid: group.id, subject: group.subject || group.id })
+        [participant?.id, participant?.lid, participant?.phoneNumber]
+          .some(value => value && ownIds.has(bare(value))))
+      if (me?.admin || me?.isAdmin || me?.isSuperAdmin) result.push({ jid: group.id, subject: group.subject || group.id })
+    }
+    if (!result.length) {
+      console.log(`${this.label}: managedGroups found none — own identities [${[...ownIds].join(', ')}], groups fetched: ${Object.keys(groups || {}).length}`)
     }
     return result.sort((a, b) => a.subject.localeCompare(b.subject, 'he'))
   }

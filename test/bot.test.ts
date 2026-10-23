@@ -911,6 +911,46 @@ test('searchMessages pages past the newest 500 ids and finds old messages', asyn
   assert.equal(results[0].id, 'm1199')
 })
 
+test('managedGroups matches the bot by LID or PN participant identity', async () => {
+  const fakeBot: any = {
+    sock: {
+      user: { id: '972501111111@s.whatsapp.net', lid: '7777777777@lid', phoneNumber: '972501111111' },
+      groupFetchAllParticipating: async () => ({
+        // LID-addressing group: own entry appears as @lid with admin role
+        'lid-group@g.us': {
+          id: 'lid-group@g.us',
+          subject: 'LID Group',
+          participants: [
+            { id: '123@lid', admin: null },
+            { id: '7777777777@lid', admin: 'admin' }
+          ]
+        },
+        // PN-addressing group: own entry as @s.whatsapp.net, superadmin
+        'pn-group@g.us': {
+          id: 'pn-group@g.us',
+          subject: 'PN Group',
+          participants: [
+            { id: '972501111111@s.whatsapp.net', admin: 'superadmin' },
+            { id: '972502222222@s.whatsapp.net', admin: null }
+          ]
+        },
+        // Group where the bot is a plain member
+        'plain-group@g.us': {
+          id: 'plain-group@g.us',
+          subject: 'Plain Group',
+          participants: [
+            { id: '972501111111@s.whatsapp.net', admin: null }
+          ]
+        }
+      })
+    },
+    id: '972501111111:12@s.whatsapp.net'
+  }
+
+  const groups = await Bot.prototype.managedGroups.call(fakeBot)
+  assert.deepEqual(groups.map((group: any) => group.jid), ['lid-group@g.us', 'pn-group@g.us'])
+})
+
 test('getMessagesAround returns the anchor and context on each side', async () => {
   const jid = '972501234567@s.whatsapp.net'
   const ids = ['old', 'anchor', 'new']
