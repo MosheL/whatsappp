@@ -2149,16 +2149,19 @@ onUnmounted(() => {
             </button>
           </div>
           <div class="send-group">
+            <button class="send-button" type="submit" :disabled="!selectedChat || busy || isReadOnly">שלח</button>
             <button
               ref="scheduleTriggerRef"
-              class="action-button schedule-trigger"
+              class="schedule-trigger"
               type="button"
               :class="{ active: showSchedule }"
               :disabled="!selectedChat || isReadOnly"
               title="שליחה מאוחרת"
+              aria-label="שליחה מאוחרת"
               @click.stop="toggleSchedule"
-            >▾</button>
-            <button type="submit" :disabled="!selectedChat || busy || isReadOnly">שלח</button>
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5 5.5 9l1.4-1.4L12 12.7l5.1-5.1L18.5 9 12 15.5Z" fill="currentColor"/></svg>
+            </button>
           </div>
         </form>
       </footer>

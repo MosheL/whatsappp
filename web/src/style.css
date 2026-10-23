@@ -2003,13 +2003,30 @@ button {
 .attach-menu button { background: transparent; border: 0; border-radius: 5px; color: #27343c; cursor: pointer; font-size: 13px; padding: 7px 10px; text-align: start; white-space: nowrap }
 .attach-menu button:hover { background: #eef4f2 }
 
-/* Send button group: schedule arrow + send */
-.send-group { align-items: center; display: flex; gap: 4px }
-.schedule-trigger { border: 1px solid #d5e0db; font-size: 12px; height: 26px; width: 26px }
-.schedule-trigger.active { background: #eef4f2; color: #128c7e }
+/* Send button group: send + schedule arrow */
+.send-group { align-items: center; display: flex; gap: 6px }
+.send-button { background: #128c7e; border: 0; border-radius: 999px; color: #ffffff; cursor: pointer; font-size: 14px; font-weight: 700; height: 34px; min-width: 72px; padding: 0 18px }
+.send-button:hover:not(:disabled) { background: #0f7668 }
+.send-button:disabled { opacity: 0.4 }
+.schedule-trigger { align-items: center; anchor-name: --schedule-button; background: transparent; border: 0; border-radius: 50%; color: #667781; cursor: pointer; display: inline-flex; height: 28px; justify-content: center; transition: background 0.15s, color 0.15s; width: 28px }
+.schedule-trigger svg { height: 18px; width: 18px }
+.schedule-trigger:hover:not(:disabled) { background: #e0e6ea; color: #128c7e }
+.schedule-trigger.active { background: #128c7e; color: #ffffff }
+.schedule-trigger:disabled { opacity: 0.35; cursor: default }
 
 /* Send-later (schedule) panel */
-.schedule-panel { background: #ffffff; border: 1px solid #cfd7dc; border-radius: 8px; bottom: 78px; box-shadow: 0 8px 24px rgba(31, 41, 51, 0.16); display: flex; flex-direction: column; gap: 8px; left: 16px; padding: 10px; position: fixed; width: min(92vw, 340px); z-index: 12 }
+.schedule-panel { background: #ffffff; border: 1px solid #cfd7dc; border-radius: 10px; bottom: 78px; box-shadow: 0 8px 24px rgba(31, 41, 51, 0.16); display: flex; flex-direction: column; gap: 8px; left: 16px; padding: 12px; position: fixed; width: min(92vw, 340px); z-index: 12 }
+
+@supports (top: anchor(top)) {
+  .schedule-panel {
+    bottom: auto;
+    left: auto;
+    position-anchor: --schedule-button;
+    right: anchor(right);
+    top: anchor(top);
+    transform: translateY(calc(-100% - 10px));
+  }
+}
 .schedule-panel .schedule-title { color: #128c7e; font-size: 13px }
 .schedule-panel .schedule-input { border: 1px solid #d5e0db; border-radius: 6px; font-size: 13px; height: 30px; padding: 0 8px }
 .schedule-panel .schedule-edit-row { align-items: center; display: flex; gap: 6px }
@@ -2017,7 +2034,9 @@ button {
 .schedule-panel .schedule-item.editing { background: #eef4f2; border-color: #128c7e }
 .schedule-panel .schedule-edit { background: transparent; border: 0; cursor: pointer; font-size: 13px; height: 26px; line-height: 1; width: 26px }
 .schedule-panel .schedule-item .schedule-cancel { flex: 0 0 auto }
-.schedule-panel .schedule-send { align-self: flex-start }
+.schedule-panel .schedule-send { align-self: flex-start; background: #128c7e; border: 0; border-radius: 999px; color: #fff; cursor: pointer; font-size: 13px; font-weight: 700; height: 32px; padding: 0 16px }
+.schedule-panel .schedule-send:hover:not(:disabled) { background: #0f7668 }
+.schedule-panel .schedule-send:disabled { opacity: 0.45 }
 .schedule-panel .schedule-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto }
 .schedule-panel .schedule-item { align-items: center; background: #f2f7f5; border: 1px solid #d5e0db; border-radius: 6px; display: flex; gap: 8px; padding: 6px 8px }
 .schedule-panel .schedule-item-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 }
