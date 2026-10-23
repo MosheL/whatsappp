@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, onUnmounted, ref } from 'vue'
+import { nextTick, onUnmounted, ref, watch } from 'vue'
 
 // File-staging modal for sending files. Owns the staged file list, previews
 // and caption; the parent only drives visibility and performs the actual
@@ -53,6 +53,13 @@ function openFiles(list = [], forwardedFlag = false, initialCaption = '') {
   caption.value = initialCaption
   nextTick(() => captionInputRef.value?.focus())
 }
+
+// Focus the caption whenever the modal opens — regardless of the order the
+// parent calls openFiles() vs. setting `open` (a bare nextTick can run before
+// the opening render is flushed).
+watch(() => props.open, open => {
+  if (open) nextTick(() => captionInputRef.value?.focus())
+})
 
 function removeFile(index) {
   const url = previews.value[index]
