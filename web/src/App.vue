@@ -1311,7 +1311,12 @@ async function reactToMessage(message, emoji) {
   if (!selectedChat.value || !message?.id) return
   reactionMessageId.value = ''
   actionMessageId.value = ''
-  if (emoji) {
+  // Tapping my own reaction removes it: an empty react text is the WhatsApp
+  // protocol for taking a reaction back.
+  const mine = Array.isArray(message.reactions)
+    && message.reactions.some(item => item?.text === emoji && (item.userJid === 'me' || item.sender === 'אני'))
+  const outgoing = mine ? '' : emoji
+  if (emoji && !mine) {
     usedEmojis.value = [emoji, ...usedEmojis.value.filter(item => item !== emoji)].slice(0, 24)
     localStorage.setItem('wa-ui-used-emojis', JSON.stringify(usedEmojis.value))
   }
@@ -1320,7 +1325,7 @@ async function reactToMessage(message, emoji) {
     const data = await api('/api/react-message', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bot: selectedBot.value, jid: selectedChat.value, id: message.id, emoji })
+      body: JSON.stringify({ bot: selectedBot.value, jid: message.jid || selectedChat.value, id: message.id, emoji: outgoing })
     })
     messages.value = messages.value.map(item => item.id === message.id ? mergeMessagePatch(item, data.patch || {}) : item)
   } catch (err) {

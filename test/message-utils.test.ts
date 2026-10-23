@@ -28,3 +28,21 @@ test('does not regress message delivery status during duplicate upserts', () => 
     { userJid: 'two', receiptTimestamp: 1 }
   ])
 })
+
+test('an empty-text reaction patch removes the reaction (un-react)', () => {
+  const existing: any = {
+    id: 'message',
+    reactions: [
+      { userJid: 'me', sender: 'אני', text: '👍', timestamp: 1 },
+      { userJid: 'other', sender: 'Other', text: '👍', timestamp: 2 }
+    ]
+  }
+
+  // Tapping my own reaction sends an empty emoji — the removal patch
+  const removed = mergeMessagePatch(existing, {
+    reaction: { userJid: 'me', sender: 'אני', text: '', timestamp: 3 }
+  })
+
+  assert.equal(removed.reactions.length, 1)
+  assert.equal(removed.reactions[0].userJid, 'other')
+})

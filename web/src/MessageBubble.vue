@@ -35,6 +35,7 @@ const formattedText = computed(() => formatMessageText(props.message.text || pro
 const formattedBody = computed(() => formatMessageText(props.message.interactiveData?.body || ''))
 const displayTime = computed(() => formatTime(props.message.timestamp))
 const fullTime = computed(() => formatDateFull(props.message.timestamp))
+const reactionGroups = computed(() => groupedReactions(props.message))
 </script>
 
 <template>
@@ -391,9 +392,9 @@ const fullTime = computed(() => formatDateFull(props.message.timestamp))
         </p>
         <small v-if="message.edited" class="edited-label">נערך</small>
         <small v-if="message.deleted" class="deleted-label">הודעה נמחקה</small>
-        <div v-if="!message.deleted && message.reactions" class="message-reactions">
+        <div v-if="!message.deleted && reactionGroups.length" class="message-reactions">
           <button
-            v-for="group in groupedReactions(message)"
+            v-for="group in reactionGroups"
             :key="group.text"
             type="button"
             :class="{ mine: group.mine }"
