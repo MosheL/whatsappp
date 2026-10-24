@@ -919,14 +919,28 @@ test('status() counts unread chats and unread messages excluding archived', () =
     connection: 'open',
     qr: '',
     listChats: () => [
-      { jid: 'a@s.whatsapp.net', unread: 3, isArchived: false },
-      { jid: 'b@s.whatsapp.net', unread: 5, isArchived: false },
-      { jid: 'c@s.whatsapp.net', unread: 7, isArchived: true }
+      { jid: 'a@s.whatsapp.net', unread: 3, isArchived: false, isMuted: true },
+      { jid: 'b@s.whatsapp.net', unread: 5, isArchived: false, isMuted: false },
+      { jid: 'c@s.whatsapp.net', unread: 7, isArchived: true, isMuted: false }
     ]
   }
   const status = Bot.prototype.status.call(fakeBot)
   assert.equal(status.unreadSessionCount, 2)
   assert.equal(status.unreadMessageCount, 8)
+  assert.equal(status.unreadMutedSessionCount, 1)
+})
+
+test('status() reports all unread chats muted when every new chat is muted', () => {
+  const fakeBot: any = {
+    id: 'me@s.whatsapp.net', authKey: 'auth', label: 'L', connection: 'open', qr: '',
+    listChats: () => [
+      { jid: 'a@s.whatsapp.net', unread: 2, isArchived: false, isMuted: true },
+      { jid: 'b@s.whatsapp.net', unread: 1, isArchived: false, isMuted: true }
+    ]
+  }
+  const status = Bot.prototype.status.call(fakeBot)
+  assert.equal(status.unreadSessionCount, 2)
+  assert.equal(status.unreadMutedSessionCount, 2)
 })
 
 test('managedGroups matches the bot by LID or PN participant identity', async () => {

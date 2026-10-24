@@ -347,6 +347,9 @@ export class Bot {
 
   status(): BotStatus {
     const chats = this.listChats()
+    // Only count unread chats that are NOT archived, so the selector badge
+    // reflects actionable (inbox) unread rather than hidden chats.
+    const unreadChats = chats.filter(chat => Number(chat.unread || 0) > 0 && !chat.isArchived)
     return {
       id: this.id,
       authKey: this.authKey,
@@ -354,12 +357,11 @@ export class Bot {
       connection: this.connection,
       qr: this.qr,
       chatCount: chats.length,
-      // Only count unread chats that are NOT archived, so the select-box
-      // badge reflects actionable (inbox) unread rather than hidden chats.
-      unreadSessionCount: chats.filter(chat => Number(chat.unread || 0) > 0 && !chat.isArchived).length,
+      unreadSessionCount: unreadChats.length,
       unreadMessageCount: chats
         .filter(chat => !chat.isArchived)
-        .reduce((sum, chat) => sum + Math.max(0, Number(chat.unread || 0)), 0)
+        .reduce((sum, chat) => sum + Math.max(0, Number(chat.unread || 0)), 0),
+      unreadMutedSessionCount: unreadChats.filter(chat => chat.isMuted).length
     }
   }
 

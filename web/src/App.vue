@@ -1973,11 +1973,14 @@ onUnmounted(() => {
             @click="selectedBot = bot.id"
           >
             <span>{{ bot.label }}</span>
-            <b v-if="bot.unreadMessageCount">({{ bot.unreadMessageCount }})</b>
+            <b
+              v-if="bot.unreadSessionCount"
+              :class="{ muted: bot.unreadMutedSessionCount >= bot.unreadSessionCount }"
+            >({{ bot.unreadSessionCount }})</b>
           </button>
         </div>
         <select v-else v-model="selectedBot" class="client-select" aria-label="לקוח">
-          <option v-for="bot in bots" :key="bot.id" :value="bot.id">{{ bot.label }} ({{ bot.unreadMessageCount || bot.unreadSessionCount || 0 }})</option>
+          <option v-for="bot in bots" :key="bot.id" :value="bot.id">{{ bot.label }} ({{ bot.unreadSessionCount || 0 }})</option>
         </select>
         <span :class="['ws-pill', { online: wsState === 'מחובר' }]">{{ wsState }}</span>
         <button class="icon-button" type="button" title="יציאה" @click="logout">יציאה</button>
