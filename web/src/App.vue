@@ -153,11 +153,11 @@ const chatSubtitle = computed(() => ""/* currentChat.value ? chatAddress(current
 const emojis = computed(() => [...new Set([...usedEmojis.value, ...defaultEmojis])].slice(0, 48))
 const emojiSearch = ref('')
 const emojiResults = computed(() => searchEmojiCatalog(emojiSearch.value))
-// Total unread messages across all chats (used by the taskbar badge).
-// Sum the per-chat unread counts rather than counting chats, so the badge
-// reflects the real number of unread messages instead of topping out at the
-// number of chats that happen to have unread.
-const unreadTotal = computed(() => chats.value.reduce((sum, chat) => sum + Math.max(0, Number(chat.unread || 0)), 0))
+// Taskbar badge / title count: chats with new messages in the ACTIVE client
+// only (chats.value is loaded per selected bot), excluding archived chats —
+// the same number the client tab shows. WhatsApp-style: count conversations,
+// not messages.
+const unreadTotal = computed(() => chats.value.filter(chat => !chat.isArchived && Number(chat.unread || 0) > 0).length)
 const archivedCount = computed(() => chats.value.filter(chat => chat.isArchived).length)
 const archivedUnreadCount = computed(() => chats.value.filter(chat => chat.isArchived && Number(chat.unread || 0) > 0).length)
 const inboxUnreadCount = computed(() => chats.value.filter(chat => !chat.isArchived && Number(chat.unread || 0) > 0).length)
@@ -406,10 +406,18 @@ async function handleSocketEvent(data) {
         selectedBot.value = nextBots[0]?.id || ''
       }
       localStorage.setItem('wa-ui-selected-bot', selectedBot.value)
-      await Promise.all(nextBots.map(refreshQr))
-      // The server does not replay events missed while disconnected.
-      await refreshAfterReconnect(true)
-      sessionReady = true
+      // QR rendering and the resync are best-effort: a failure in either must
+      // not leave the session permanently "not ready" (that would break
+      // client switching and the unread badge).
+      try {
+        await Promise.all(nextBots.map(refreshQr))
+        // The server does not replay events missed while disconnected.
+        await refreshAfterReconnect(true)
+      } catch (err) {
+        console.warn('init resync failed:', err?.message || err)
+      } finally {
+        sessionReady = true
+      }
     }
     if (data.type === 'connection') {
       // status.id is the WhatsApp account JID; data.bot is the stable API ID.
@@ -1897,9 +1905,11 @@ watch(selectedBot, async (val, oldVal) => {
   reactionMessageId.value = ''
   replyTo.value = null
   emojiPanelOpen.value = false
-  if (!sessionReady) return
+  // Reload for the newly selected client. The chat list (and therefore the
+  // taskbar/title count) must always follow the active client — even if the
+  // session-ready flag is not set yet (e.g. a slow/failed init).
   try {
-    await loadContacts()
+    if (sessionReady) await loadContacts()
     await loadChats()
   } catch (err) {
     error.value = err.message
