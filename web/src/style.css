@@ -2111,9 +2111,9 @@ button {
 .schedule-panel .schedule-item.editing { background: #eef4f2; border-color: #128c7e }
 .schedule-panel .schedule-edit { background: transparent; border: 0; cursor: pointer; font-size: 13px; height: 26px; line-height: 1; width: 26px }
 .schedule-panel .schedule-item .schedule-cancel { flex: 0 0 auto }
-.schedule-panel .schedule-send { align-self: flex-start; background: #128c7e; border: 0; border-radius: 999px; color: #fff; cursor: pointer; font-size: 13px; font-weight: 700; height: 32px; padding: 0 16px }
-.schedule-panel .schedule-send:hover:not(:disabled) { background: #0f7668 }
-.schedule-panel .schedule-send:disabled { opacity: 0.45 }
+.schedule-panel .schedule-send { align-self: flex-start; background: #128c7e !important; border: 0; border-radius: 999px; color: #ffffff !important; cursor: pointer; font-size: 13px; font-weight: 700; height: 32px; padding: 0 16px !important }
+.schedule-panel .schedule-send:hover:not(:disabled) { background: #0f7668 !important }
+.schedule-panel .schedule-send:disabled { cursor: default; opacity: 0.45 }
 .schedule-panel .schedule-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto }
 .schedule-panel .schedule-item { align-items: center; background: #f2f7f5; border: 1px solid #d5e0db; border-radius: 6px; display: flex; gap: 8px; padding: 6px 8px }
 .schedule-panel .schedule-item-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 }

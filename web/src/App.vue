@@ -2256,7 +2256,12 @@ onUnmounted(() => {
         <button type="button" class="schedule-cancel" title="בטל עריכה" @click="cancelScheduledEdit">×</button>
       </div>
       <input v-model="scheduleAt" class="schedule-input" type="datetime-local" :min="toLocalInputValue(new Date())" />
-      <button type="button" class="light-button schedule-send" :disabled="scheduling || (editingScheduledId && !scheduledEditText.trim())" @click="scheduleMessage">
+      <button
+        type="button"
+        class="light-button schedule-send"
+        :disabled="scheduling || (Boolean(editingScheduledId) && !scheduledEditText.trim())"
+        @click="scheduleMessage"
+      >
         {{ scheduling ? 'שומר…' : editingScheduledId ? 'עדכן' : 'שלח מאוחר יותר' }}
       </button>
       <div v-if="scheduledList.length" class="schedule-list">
