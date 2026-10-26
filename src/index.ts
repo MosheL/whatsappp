@@ -136,8 +136,8 @@ function resetLoginAttempts(ip: string) {
 
 if (!apiTestMode) {
   await Promise.all([
-    createBot('auth', 'לקוח 1', 'bot1').then(bot => bots.set('bot1', bot)),
-    createBot('auth2', 'לקוח 2', 'bot2').then(bot => bots.set('bot2', bot))
+    createBot('auth', 'קבוצות', 'bot1').then(bot => bots.set('bot1', bot)),
+    createBot('auth2', 'אישי', 'bot2').then(bot => bots.set('bot2', bot))
   ])
 }
 
