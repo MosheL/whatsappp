@@ -59,7 +59,11 @@ export function avatarUrl(chat, botId, large = false) {
   if (!chat?.jid || !botId) return ''
   if (avatarCache[chat.jid] === false) return ''
   const size = large ? 'large' : 'default'
-  return `/api/avatar?size=${size}&v=${AVATAR_VERSION}&bot=${encodeURIComponent(botId)}&jid=${encodeURIComponent(chat.jid)}`
+  // avatarVersion is bumped by the server when the contact's photo changes, so a
+  // changed photo produces a new URL and the browser refetches it instead of
+  // serving the old image from its own cache.
+  const version = chat.avatarVersion || AVATAR_VERSION
+  return `/api/avatar?size=${size}&v=${version}&bot=${encodeURIComponent(botId)}&jid=${encodeURIComponent(chat.jid)}`
 }
 
 // Bump this whenever avatar caching changes to force the browser to

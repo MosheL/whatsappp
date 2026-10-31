@@ -198,6 +198,8 @@ export type UiChat = {
   lastSeen?: number
   typing?: string | null
   typingTimestamp?: number
+  /** Bumped when the contact's profile photo changes; busts browser avatar caches. */
+  avatarVersion?: number
 }
 
 // -------- Patch types (replace Record<string, any>) --------
@@ -346,6 +348,8 @@ export type ContactCacheDeps = {
   onChatEvent: (chat: UiChat) => void
   onChatMerge: (fromJid: string, toJid: string, chat: UiChat) => void
   loadAvatar: (jid: string) => Promise<string | void>
+  /** Called when a contact's profile photo changed (new image available). */
+  onAvatarChanged?: (jid: string) => void
   persistChat: (chat: UiChat) => void
   trimChatCache: () => void
   removeChatStore: (jid: string) => Promise<void>

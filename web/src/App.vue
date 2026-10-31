@@ -7,7 +7,7 @@ import { onClickOutside } from '@vueuse/core'
 import { useBlob } from './composables/useBlob.js'
 import { wsState, connectSocket, disconnectSocket, isOpen, isClosed } from './socket.js'
 import {
-  formatTime, formatDateFull, formatDateCaption, formatLastSeen, initials, avatarUrl, setAvatarCache, getAvatarCache, AVATAR_VERSION
+  formatTime, formatDateFull, formatDateCaption, formatLastSeen, initials, avatarUrl, setAvatarCache, getAvatarCache
 } from './helpers.js'
 import {
   hasLinkCandidate, linkPreviewHref, linkPreviewHost, linkPreviewImageStyle, messagePreview
@@ -451,6 +451,12 @@ async function handleSocketEvent(data) {
     }
     if (data.type === 'chat') {
       if (data.bot === selectedBot.value) {
+        // A changed profile photo bumps avatarVersion; forget the "has avatar"
+        // probe so the new URL is requested even when the old photo 404ed.
+        const existing = chatsById.value.get(data.chat.jid)
+        if (existing && (existing.avatarVersion || 0) !== (data.chat.avatarVersion || 0)) {
+          setAvatarCache(data.chat.jid, undefined)
+        }
         upsertChat(data.chat)
       }
     }
@@ -792,9 +798,16 @@ async function markAllRead() {
 // Only when the small avatar actually rendered as an image (no 404 / non-image).
 function openChatAvatar() {
   if (!selectedChat.value || !selectedBot.value || !avatarLoaded.value) return
-  const url = `/api/avatar?size=large&v=${AVATAR_VERSION}&bot=${encodeURIComponent(selectedBot.value)}&jid=${encodeURIComponent(selectedChat.value)}`
-  window.open(url, '_blank', 'noopener')
+  window.open(selectedAvatarUrl(true), '_blank', 'noopener')
 }
+
+// Versioned avatar URL for the open conversation (large when requested).
+function selectedAvatarUrl(large = false) {
+  if (!selectedChat.value || !selectedBot.value) return ''
+  const chat = chatsById.value.get(selectedChat.value)
+  return avatarUrl({ jid: selectedChat.value, avatarVersion: chat?.avatarVersion }, selectedBot.value, large)
+}
+const currentAvatarUrl = computed(() => selectedAvatarUrl())
 
 function clearLocalUnread(jid = selectedChat.value) {
   const chat = chats.value.find(item => item.jid === jid)
@@ -2083,7 +2096,7 @@ onUnmounted(() => {
       @drop.prevent="onDropFile"
     >
       <header class="conversation-head">
-        <img :key="selectedChat + AVATAR_VERSION" :src="selectedChat && getAvatarCache(selectedChat) !== false ? `/api/avatar?v=${AVATAR_VERSION}&bot=${encodeURIComponent(selectedBot)}&jid=${encodeURIComponent(selectedChat)}` : ''" alt="" class="large-avatar image" draggable="false" loading="lazy" title="הצג תמונת פרופיל בגודל מלא" @click="openChatAvatar" @error="avatarLoaded = false; setAvatarCache(selectedChat, false); $event.target.style.display='none'" @load="avatarLoaded = true; setAvatarCache(selectedChat, true)" />
+        <img :key="selectedChat + String(currentAvatarUrl)" :src="currentAvatarUrl" alt="" class="large-avatar image" draggable="false" loading="lazy" title="הצג תמונת פרופיל בגודל מלא" @click="openChatAvatar" @error="avatarLoaded = false; setAvatarCache(selectedChat, false); $event.target.style.display='none'" @load="avatarLoaded = true; setAvatarCache(selectedChat, true)" />
         <span :class="['large-avatar', { 'avatar-loaded': avatarLoaded }]" title="הצגה תמונת פרופיל בגודל מלא" @click="openChatAvatar">{{ currentChat ? initials(currentChat) : (selectedChat || '?').slice(0, 2) }}</span>
         <div class="conversation-head-copy" title="פרטי שיחה" @click="showChatInfo = true">
           <h1>{{ chatTitle }}</h1>

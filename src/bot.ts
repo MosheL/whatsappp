@@ -280,6 +280,10 @@ export class Bot {
         this.events.emit('event', { type: 'chat-merge', bot: authKey, fromJid, toJid, chat })
       },
       loadAvatar: (jid: string) => this.loadAvatar(jid),
+      onAvatarChanged: (jid: string) => {
+        this.refreshContactAvatar(jid).catch((err: any) =>
+          console.error(`${label}: failed refreshing changed avatar`, err?.message || err))
+      },
       persistChat: (chat: UiChat) => this.persistChat(chat),
       trimChatCache: () => this.trimChatCache(),
       removeChatStore: (jid: string) => this.removeChatStore(jid),
@@ -807,18 +811,52 @@ export class Bot {
     return await this.messageStore.getMedia(jid, messageId)
   }
 
-  async loadAvatar(jid: string): Promise<void> {
+  async loadAvatar(jid: string, force = false): Promise<void> {
     jid = this.contactCache.canonicalJid(jid)
     if (!jid || !this.sock) return
 
     const existing = this.avatarLoads.get(jid)
-    if (existing) return existing
-    if ((this.avatarFailures.get(jid) || 0) > Date.now()) return
+    if (existing) {
+      // A forced reload (photo changed) must wait for the in-flight fetch so the
+      // fresh image wins, then start a new load instead of reusing the old one.
+      if (!force) return existing
+      await existing.catch(() => {})
+    }
+    if (!force && (this.avatarFailures.get(jid) || 0) > Date.now()) return
+    if (force) this.avatarFailures.delete(jid)
 
     const load = this.queueAvatarLoad(() => this.fetchAndCacheAvatar(jid))
-      .finally(() => this.avatarLoads.delete(jid))
     this.avatarLoads.set(jid, load)
-    return load
+    try {
+      await load
+    } finally {
+      if (this.avatarLoads.get(jid) === load) this.avatarLoads.delete(jid)
+    }
+  }
+
+  /**
+   * The contact's profile photo changed. Drop the cached image variants, tell
+   * connected UIs to refetch it (chat event carries a new avatarVersion that
+   * busts the browser cache), then download the new photo right away so it is
+   * ready before the next avatar request.
+   */
+  async refreshContactAvatar(jid: string): Promise<void> {
+    jid = this.contactCache.canonicalJid(jid)
+    if (!jid || shouldIgnoreUiJid(jid)) return
+    const keys = [
+      Bot.avatarKey(this.authKey, jid, 'default'),
+      Bot.avatarKey(this.authKey, jid, 'large')
+    ]
+    await this.redis.del(...keys).catch((err: any) =>
+      console.error(`${this.label}: failed clearing avatar cache`, err?.message || err))
+    this.avatarFailures.delete(jid)
+    const chat = this.chats.get(jid)
+    if (chat) {
+      chat.avatarVersion = Date.now()
+      this.persistChat(chat)
+      this.events.emit('event', { type: 'chat', bot: this.authKey, chat })
+    }
+    await this.loadAvatar(jid, true)
   }
 
   static avatarKey(authKey: string, jid: string, size: 'default' | 'large'): string {

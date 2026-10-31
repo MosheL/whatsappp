@@ -387,3 +387,54 @@ test('groupReadOnly marks announcement groups read-only unless the account is an
   cache.upsertGroupMetadata(jid, { readOnly: true })
   assert.equal(chats.get(jid)?.readOnly, true)
 })
+
+test('signals a profile-photo change only when the image actually changed', () => {
+  const jid = '9725000000002@s.whatsapp.net'
+  const chats = new Map([[jid, { jid, name: 'Alice', isGroup: false, timestamp: 1 } as any]])
+  const changed: string[] = []
+  const tx = { hset() { return this }, hdel() { return this }, zrem() { return this }, zadd() { return this }, zremrangebyrank() { return this }, exec: async () => [] }
+  const cache = new ContactCache({
+    redis: { multi: () => tx },
+    label: 'test',
+    contactCacheKey: 'contacts',
+    chatCacheKey: 'chats',
+    chatIndexKey: 'chat-index',
+    groupMetadataCacheKey: value => value,
+    groupMetadataCacheMs: 1000,
+    getSock: () => undefined,
+    getOwnId: () => '',
+    contacts: new Map(),
+    lidToPhone: new Map(),
+    chats,
+    onChatEvent: () => {},
+    onChatMerge: () => {},
+    loadAvatar: async () => {},
+    onAvatarChanged: value => changed.push(value),
+    persistChat: () => {},
+    trimChatCache: () => {},
+    removeChatStore: async () => {},
+    removeMessageStore: async () => {},
+    removeNonChat: () => {},
+    restoreMessages: async () => {}
+  })
+
+  // First sighting of a contact is not a change.
+  cache.upsertContact({ id: jid, phoneNumber: jid, name: 'Alice', imgUrl: 'https://cdn/a.jpg' })
+  assert.deepEqual(changed, [])
+
+  // Re-syncing the same image is not a change either.
+  cache.upsertContact({ id: jid, phoneNumber: jid, name: 'Alice', imgUrl: 'https://cdn/a.jpg' })
+  assert.deepEqual(changed, [])
+
+  // WhatsApp signals a new photo with imgUrl 'changed'.
+  cache.upsertContact({ id: jid, phoneNumber: jid, name: 'Alice', imgUrl: 'changed' })
+  assert.deepEqual(changed, [jid])
+
+  // Another 'changed' without a fresh image is a repeat, not a new change.
+  cache.upsertContact({ id: jid, phoneNumber: jid, name: 'Alice', imgUrl: 'changed' })
+  assert.deepEqual(changed, [jid])
+
+  // A direct new URL also counts as a change.
+  cache.upsertContact({ id: jid, phoneNumber: jid, name: 'Alice', imgUrl: 'https://cdn/b.jpg' })
+  assert.deepEqual(changed, [jid, jid])
+})

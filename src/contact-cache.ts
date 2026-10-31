@@ -584,10 +584,22 @@ export class ContactCache {
   }
 
   upsertContact(contact: Partial<Contact>): void {
-    const { chats, persistChat, trimChatCache, onChatEvent, removeNonChat, sock } = this.deps
+    const { chats, persistChat, trimChatCache, onChatEvent, removeNonChat, onAvatarChanged } = this.deps
     const jid = contact.phoneNumber || (isLidJid(contact.id) ? undefined : contact.id) || contact.lid
     if (shouldIgnoreUiJid(jid)) return
+    // Detect a changed profile photo BEFORE rememberContact merges the new data
+    // over the stored contact: WhatsApp signals a change with imgUrl 'changed'
+    // (the new URL is only obtained through a fresh profilePictureUrl lookup).
+    const previousContact = this.contactForJid(jid)
+    const previousImage = contactImage(previousContact)
     this.rememberContact(contact)
+    const nextImage = contactImage(this.contactForJid(jid))
+    const photoChanged = Boolean(previousContact) && (
+      contact.imgUrl === 'changed'
+        ? previousContact!.imgUrl !== 'changed'
+        : Boolean(nextImage) && nextImage !== previousImage
+    )
+    if (photoChanged) onAvatarChanged?.(jid)
     const existing = chats.get(jid) || (contact.lid ? chats.get(contact.lid) : undefined) || (contact.phoneNumber ? chats.get(contact.phoneNumber) : undefined)
     if (!existing) {
       removeNonChat(jid)
