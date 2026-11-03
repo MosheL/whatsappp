@@ -14,6 +14,7 @@ import {
   isInteractiveMessage, isLocationMessage, interactiveTypeLabel, isUnsupportedMessage
 } from './message-renderer.js'
 import { isMessageEditable } from '../../src/message-utils.ts'
+import { messageCopyText, messageCopyBody, messagesCopyText } from './message-copy.js'
 import MessageBubble from './MessageBubble.vue'
 import Toast from './toast.js'
 import { useHoverMenu } from './composables/useHoverMenu.js'
@@ -53,6 +54,7 @@ function onSelectionChange() {
 
 onMounted(() => {
   document.addEventListener('selectionchange', onSelectionChange)
+  document.addEventListener('copy', onThreadCopy)
   onClickOutside(messageMenuRef, () => {
     if (props.actionMessageId) {
       emit('toggle-message-menu', actionMessage.value)
@@ -61,6 +63,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  document.removeEventListener('copy', onThreadCopy)
   for (const timer of typingTimers.values()) clearTimeout(timer)
   typingTimers.clear()
   for (const url of Object.values(loadedMedia.value)) {
@@ -252,13 +255,27 @@ function beginBubbleDrag(event, message) {
   event.target.setAttribute('dragging', '')
 }
 
-// Copy message text with 'אני:' prefix for fromMe messages
-function copyWithPrefix(message) {
-  const prefix = message.fromMe ? 'אני: ' : ''
-  const text = message.text || ''
-  const clipboardText = prefix + text
-  if (!clipboardText) return
-  navigator.clipboard.writeText(clipboardText).then(() => Toast.success('הועתק')).catch(() => Toast.error('ההעתקה נכשלה'))
+// Copy with the sender, quote and media context: "אני: ..." for own messages.
+function copyMessage(message) {
+  const text = messageCopyText(message)
+  if (!text) return
+  if (!navigator.clipboard?.writeText) {
+    copyTextFallback(text)
+    Toast.success('הועתק')
+    return
+  }
+  navigator.clipboard.writeText(text).then(() => Toast.success('הועתק')).catch(() => {
+    copyTextFallback(text)
+    Toast.success('הועתק')
+  })
+}
+
+// Copy the whole bubble as a block, including the message it replies to.
+function copyMessageFull(message) {
+  const text = messageCopyText(message, { withQuote: true })
+  if (!text) return
+  copyTextFallback(text)
+  Toast.success('הועתק')
 }
 
 // Fallback copy for non-secure contexts (old textarea method)
@@ -276,10 +293,76 @@ function copyTextFallback(text) {
   document.body.removeChild(textarea)
 }
 
-function copyAllText(message) {
-  const text = message.text || ''
-  if (!text) return
-  copyTextFallback(text)
+// -------- Selection copy --------
+// A plain Ctrl+C over the thread copies the browser's raw text, which loses who
+// wrote what. Intercept it and rebuild the selected bubbles as
+// "[time] sender: text" blocks with their quotes.
+const COPY_BODY_SELECTORS = ['.message-text', '.interactive-body', '.interactive-title', '.interactive-footer', '.transcript-text p']
+
+function intersects(range, node) {
+  return Boolean(node) && range.intersectsNode(node)
+}
+
+// True when the selection covers the bubble from its start to its end.
+function bubbleFullySelected(range, bubble) {
+  if (bubble.contains(range.startContainer) || bubble.contains(range.endContainer)) return false
+  return range.comparePoint(bubble, 0) <= 0 && range.comparePoint(bubble, bubble.childNodes.length) >= 0
+}
+
+// Text the selection actually covers inside `node` (clipped to that node).
+function selectedTextIn(range, node) {
+  const sub = document.createRange()
+  const startInside = node.contains(range.startContainer)
+  const endInside = node.contains(range.endContainer)
+  sub.setStart(startInside ? range.startContainer : node, startInside ? range.startOffset : 0)
+  sub.setEnd(endInside ? range.endContainer : node, endInside ? range.endOffset : node.childNodes.length)
+  return sub.toString().trim()
+}
+
+// Per-bubble copy options: full text for fully selected bubbles, the partial
+// selected text otherwise, plus the quote when it is part of the selection.
+function copyBlockOptions(range, bubble, message, multiple) {
+  const full = bubbleFullySelected(range, bubble)
+  const quoteSelected = intersects(range, bubble.querySelector('.quoted-message'))
+  const bodyNode = COPY_BODY_SELECTORS.map(selector => bubble.querySelector(selector)).find(node => intersects(range, node))
+  let body
+  if (full) body = messageCopyBody(message)
+  else if (bodyNode) body = selectedTextIn(range, bodyNode)
+  else if (quoteSelected) body = ''
+  else body = messageCopyBody(message)
+  return {
+    time: multiple ? formatTime(message.timestamp) : '',
+    body,
+    withQuote: Boolean(message.quoted) && (full || quoteSelected)
+  }
+}
+
+function buildSelectionCopyText(range) {
+  const thread = threadEl.value
+  if (!thread) return ''
+  const bubbles = [...thread.querySelectorAll('.bubble[data-message-id]')].filter(bubble => intersects(range, bubble))
+  if (!bubbles.length) return ''
+  const multiple = bubbles.length > 1
+  const entries = bubbles
+    .map(bubble => ({ bubble, message: props.messages.find(item => item.id === bubble.dataset.messageId) }))
+    .filter(entry => entry.message)
+    .map(({ bubble, message }) => ({ message, options: copyBlockOptions(range, bubble, message, multiple) }))
+  return messagesCopyText(entries)
+}
+
+function onThreadCopy(event) {
+  // Never touch copies that originate from a text field (including our own
+  // clipboard fallback textarea) or from outside the thread.
+  if (event.target?.closest?.('textarea, input')) return
+  const selection = window.getSelection()
+  if (!selection || selection.isCollapsed || !selection.rangeCount) return
+  const range = selection.getRangeAt(0)
+  const thread = threadEl.value
+  if (!thread || !intersects(range, thread)) return
+  const text = buildSelectionCopyText(range)
+  if (!text || !event.clipboardData) return
+  event.clipboardData.setData('text/plain', text)
+  event.preventDefault()
   Toast.success('הועתק')
 }
 
@@ -553,8 +636,8 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
           @click="emit('delete-message', actionMessage, { local: actionMessage.deleted || $event.shiftKey })"
         >{{ actionMessage.deleted ? 'הסר' : 'מחק' }}</button>
         <button type="button" @click="emit('forward-message', actionMessage)">העבר</button>
-        <button type="button" @click="copyWithPrefix(actionMessage)">העתק</button>
-        <button type="button" @click="copyAllText(actionMessage)">העתק הכל</button>
+        <button type="button" @click="copyMessage(actionMessage)">העתק</button>
+        <button type="button" @click="copyMessageFull(actionMessage)">העתק הכל</button>
         <div v-if="reactionMessageId === actionMessage.id" class="message-reaction-picker">
           <button v-for="emoji in emojis" :key="emoji" type="button" @click="emit('react', actionMessage, emoji)">{{ emoji }}</button>
         </div>
