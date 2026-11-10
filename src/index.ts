@@ -26,7 +26,8 @@ const loginBlockDurationMs = Number(process.env.LOGIN_BLOCK_DURATION_MS || 30 * 
 // inject fake bots / a stubbed share-store Redis client.
 export const bots = new Map<string, Bot>()
 const apiTestMode = process.env.API_TEST_MODE === 'true'
-// Public share tokens are anonymous read access to one group's recent messages.
+// Public share tokens are anonymous read access to one chat's recent messages
+// (a group or a private/1:1 conversation).
 // They are independent of the UI session, so the read route is served before the
 // auth guard below.
 export const shareStore = new ShareStore(new Redis({
@@ -43,6 +44,11 @@ export const shareStore = new ShareStore(new Redis({
   retryStrategy: () => null
 }))
 const shareReadLimit = Number(process.env.WHATSAPP_SHARE_LIMIT || 300)
+// `?limit=all` streams the chat's whole stored history instead of the recent
+// window. Off by default only when explicitly disabled; the optional max keeps
+// one request from pulling an unbounded archive (0 = no cap).
+const shareAllowAll = process.env.WHATSAPP_SHARE_ALLOW_ALL !== 'false'
+const shareAllMax = Math.max(0, Number(process.env.WHATSAPP_SHARE_ALL_MAX || 0) || 0)
 
 // ioredis emits 'error' events that would otherwise crash the process when no
 // listener is attached. Log them once and move on.
@@ -211,10 +217,10 @@ function normalizeUploadedFileName(fileName: string) {
   return clean
 }
 
-function contentDisposition(fileName: string) {
+function contentDisposition(fileName: string, download = false) {
   const clean = (fileName || 'file').replace(/[\r\n"]/g, '').replace(/[/\\]/g, '').trim() || 'file'
   const fallback = clean.replace(/[^\x20-\x7e]/g, '_')
-  return `inline; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(clean)}`
+  return `${download ? 'attachment' : 'inline'}; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(clean)}`
 }
 
 function getCookies(req: http.IncomingMessage): Record<string, string> {
@@ -403,48 +409,144 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
-  // -------- Public group share (no login) --------
-  // GET /api/share/<token>[?limit=300] returns the last N messages of the group
-  // the token points at. Intended for AI/automation consumers.
+  // -------- Public chat share (no login) --------
+  // One token grants read access to a single chat — a group or a private
+  // (1:1) conversation — so automation/AI consumers can poll both.
+  //   GET /api/share/<token>[?limit=300]             last N messages (JSON)
+  //   GET /api/share/<token>/attachments[?limit=300] attachment index + download URLs
+  //   GET /api/share/<token>/media?id=<messageId>    attachment bytes
   if (req.method === 'GET' && url.pathname.startsWith('/api/share/')) {
-    const token = decodeURIComponent(url.pathname.slice('/api/share/'.length))
+    const rest = url.pathname.slice('/api/share/'.length)
+    const slash = rest.indexOf('/')
+    const token = decodeURIComponent(slash < 0 ? rest : rest.slice(0, slash))
+    const action = slash < 0 ? '' : rest.slice(slash + 1).replace(/\/+$/, '')
     if (!token) {
       sendJson(res, 400, { error: 'Missing share token' })
       return
     }
+
+    let link
     try {
       await ensureShareRedis()
-      const link = await shareStore.get(token)
-      if (!link) {
-        sendJson(res, 404, { error: 'Share link not found' })
+      link = await shareStore.get(token)
+    } catch {
+      sendJson(res, 503, { error: 'Share store unavailable' })
+      return
+    }
+    if (!link) {
+      sendJson(res, 404, { error: 'Share link not found' })
+      return
+    }
+    const bot = bots.get(link.bot)
+    if (!bot) {
+      sendJson(res, 404, { error: 'Client not found' })
+      return
+    }
+
+    const jid = bot.contactCache.canonicalJid(link.jid)
+    const chat = bot.chats.get(jid)
+    const mediaBase = `/api/share/${encodeURIComponent(token)}/media`
+    const chatInfo = {
+      jid,
+      name: chat?.name || '',
+      phoneNumber: chat?.phoneNumber || '',
+      participantCount: chat?.participantCount,
+      isGroup: Boolean(chat?.isGroup)
+    }
+
+    // Download one attachment. The (optional) jid may only point at the chat the
+    // token belongs to, so a token can never be used to pull media from elsewhere.
+    if (action === 'media') {
+      const messageId = url.searchParams.get('id') || ''
+      const requestedJid = (url.searchParams.get('jid') || '').trim()
+      if (!messageId) {
+        sendJson(res, 400, { error: 'Missing message id' })
         return
       }
-      const bot = bots.get(link.bot)
-      if (!bot) {
-        sendJson(res, 404, { error: 'Client not found' })
+      if (requestedJid && bot.contactCache.canonicalJid(requestedJid) !== jid) {
+        sendJson(res, 403, { error: 'Message is not part of this chat' })
         return
       }
-      const requested = Number(url.searchParams.get('limit') || shareReadLimit)
-      const limit = Math.max(1, Math.min(Number.isFinite(requested) ? requested : shareReadLimit, shareReadLimit))
-      const jid = bot.contactCache.canonicalJid(link.jid)
-      const chat = bot.chats.get(jid)
-      const messages = await bot.getMessages(jid, limit)
+      try {
+        const media = await bot.getMedia(jid, messageId)
+        res.writeHead(200, {
+          'Content-Type': media.mimetype || 'application/octet-stream',
+          'Content-Disposition': contentDisposition(media.fileName || messageId, true),
+          'Cache-Control': 'private, max-age=86400'
+        })
+        res.end(media.buffer)
+      } catch (err: any) {
+        sendJson(res, 404, { error: err.message || 'Attachment not available' })
+      }
+      return
+    }
+
+    if (action && action !== 'attachments') {
+      sendJson(res, 404, { error: 'Unknown share endpoint' })
+      return
+    }
+
+    // `limit=all` (or `?all=1`) returns the whole stored history; numbers stay
+    // capped by WHATSAPP_SHARE_LIMIT so one call can't accidentally pull it all.
+    const limitParam = String(url.searchParams.get('limit') ?? '').trim().toLowerCase()
+    const wantsAll = limitParam === 'all' || ['1', 'true', 'yes'].includes(String(url.searchParams.get('all') ?? '').toLowerCase())
+    if (wantsAll && !shareAllowAll) {
+      sendJson(res, 403, { error: 'Full history is disabled' })
+      return
+    }
+    const requested = Number(limitParam || shareReadLimit)
+    const limit = wantsAll ? 'all' : Math.max(1, Math.min(Number.isFinite(requested) ? requested : shareReadLimit, shareReadLimit))
+    let messages
+    try {
+      messages = !wantsAll
+        ? await bot.getMessages(jid, limit as number)
+        : shareAllMax > 0
+          ? await bot.getAllMessages(jid, shareAllMax)
+          : await bot.getAllMessages(jid)
+    } catch (err: any) {
+      sendJson(res, 500, { error: err.message })
+      return
+    }
+
+    // Attachment index: one entry per media message, with a ready-to-fetch URL.
+    if (action === 'attachments') {
+      const attachments = messages
+        .filter(message => message.media)
+        .map(message => ({
+          id: message.id,
+          timestamp: message.timestamp,
+          fromMe: Boolean(message.fromMe),
+          sender: message.sender,
+          kind: message.media!.kind,
+          mimetype: message.media!.mimetype,
+          fileName: message.media!.fileName || '',
+          caption: message.media!.caption || '',
+          ready: Boolean(message.downloadable),
+          url: `${mediaBase}?id=${encodeURIComponent(message.id)}`
+        }))
       sendJson(res, 200, {
         token,
-        group: {
-          jid,
-          name: chat?.name || '',
-          participantCount: chat?.participantCount,
-          isGroup: true
-        },
+        chat: chatInfo,
+        group: chatInfo,
         label: link.label || null,
         limit,
-        count: messages.length,
-        messages
+        count: attachments.length,
+        attachments
       })
-    } catch (err: any) {
-      sendJson(res, 503, { error: 'Share store unavailable' })
+      return
     }
+
+    sendJson(res, 200, {
+      token,
+      chat: chatInfo,
+      group: chatInfo,
+      label: link.label || null,
+      limit,
+      count: messages.length,
+      messages: messages.map(message => message.media
+        ? { ...message, mediaUrl: `${mediaBase}?id=${encodeURIComponent(message.id)}` }
+        : message)
+    })
     return
   }
 
@@ -1161,7 +1263,10 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       )
       sendJson(res, 200, { ok: true, message })
     } catch (err: any) {
-      sendJson(res, 500, { error: err.message })
+      // Audio that is not mp3/aac is transcoded with ffmpeg; surface a clear,
+      // actionable message instead of the raw spawn error.
+      const detail = String(err?.message || '')
+      sendJson(res, 500, { error: /ffmpeg not found/i.test(detail) ? 'לא ניתן להמיר קובץ אודיו: ffmpeg חסר בשרת' : detail })
     }
     return
   }

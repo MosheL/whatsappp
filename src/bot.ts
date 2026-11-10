@@ -62,6 +62,7 @@ import {
 } from './message-processor.ts'
 import { MessageStore } from './message-store.ts'
 import { mergeMessagePatch, messageStatusRank, isMessageEditable } from './message-utils.ts'
+import { prepareAudioUpload } from './audio-convert.ts'
 
 const redisOptions = {
   host: process.env.REDIS_HOST ?? '127.0.0.1',
@@ -220,6 +221,8 @@ export class Bot {
   avatarActive = 0
   scheduledQueueKey: string
   scheduledSender: NodeJS.Timeout | undefined
+  /** Test seam: overrides the ffmpeg transcode used by sendFile for unsupported audio. */
+  audioTranscoder?: (file: Buffer, fileName: string, mimeType: string) => Promise<{ buffer: Buffer, fileName: string, mimeType: string } | null>
 
   constructor(authKey: string, label: string, state: any, saveCreds: any, redis: any, botId = '') {
     this.events = new EventEmitter()
@@ -415,6 +418,46 @@ export class Bot {
       ids = await this.redis.zrange(indexKey, -safeLimit, -1)
     }
     const raw = await this.messageStore.loadMessagePayloads(jid, ids)
+    return raw
+      .filter(Boolean)
+      .map(item => this.publicMessage(JSON.parse(item!)))
+      .sort((a, b) => a.timestamp - b.timestamp)
+  }
+
+  /**
+   * Return the whole stored history of a chat, oldest first.
+   *
+   * `getMessages` is intentionally windowed (500 newest). This walks the index
+   * in pages instead, so share links can expose every message Redis still holds
+   * — i.e. everything kept by UI_STORED_MESSAGE_LIMIT (0 = unlimited).
+   * `max` is an optional safety cap applied to the newest chunk.
+   */
+  async getAllMessages(jid: string, max?: number): Promise<UiMessage[]> {
+    jid = this.contactCache.canonicalJid(jid)
+    const indexKey = this.messageIndexKey(jid)
+    const PAGE_SIZE = 500
+    const cap = Number.isFinite(max) && Number(max) > 0 ? Number(max) : 0
+
+    let ids: string[]
+    if (cap && cap <= PAGE_SIZE) {
+      ids = await this.redis.zrange(indexKey, -cap, -1)
+    } else {
+      const total = await this.redis.zcard(indexKey)
+      const start = cap ? Math.max(0, total - cap) : 0
+      ids = []
+      for (let offset = start; offset < total; offset += PAGE_SIZE) {
+        const page = await this.redis.zrange(indexKey, offset, Math.min(offset + PAGE_SIZE - 1, total - 1))
+        if (page?.length) ids.push(...page)
+      }
+    }
+    if (!ids.length) return []
+
+    // Load in chunks; the whole id list is already in memory so a missing
+    // payload can be dropped from the index without shifting the paging above.
+    const raw: string[] = []
+    for (let offset = 0; offset < ids.length; offset += PAGE_SIZE) {
+      raw.push(...await this.messageStore.loadMessagePayloads(jid, ids.slice(offset, offset + PAGE_SIZE)))
+    }
     return raw
       .filter(Boolean)
       .map(item => this.publicMessage(JSON.parse(item!)))
@@ -1580,6 +1623,16 @@ export class Bot {
 
   async sendFile(jid: string, file: Buffer, fileName: string, mimeType: string, caption = '', forwarded = false) {
     if (!this.sock) throw new Error('Socket not connected')
+    // WhatsApp only plays MP3/AAC audio; transcode anything else (wav, flac,
+    // ogg/opus, amr, ...) with ffmpeg so the upload is not shown as unsupported.
+    // `audioTranscoder` is injectable so tests never shell out to ffmpeg.
+    const transcodeAudio = this.audioTranscoder || prepareAudioUpload
+    const audio = await transcodeAudio(file, fileName, mimeType)
+    if (audio) {
+      file = audio.buffer
+      fileName = audio.fileName
+      mimeType = audio.mimeType
+    }
     jid = this.contactCache.resolveOutgoingJid(jid)
     const content: any =
       mimeType.startsWith('image/')

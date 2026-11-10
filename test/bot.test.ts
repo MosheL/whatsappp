@@ -15,7 +15,8 @@ test('marks dragged media as forwarded and preserves audio media kind', async ()
     },
     contactCache: { resolveOutgoingJid: (jid: string) => jid },
     messageStore: { persistMedia: async () => {} },
-    recordUiMessage: (message: any) => message
+    recordUiMessage: (message: any) => message,
+    audioTranscoder: async () => null
   }
 
   const message = await Bot.prototype.sendFile.call(
@@ -31,6 +32,46 @@ test('marks dragged media as forwarded and preserves audio media kind', async ()
   assert.deepEqual(sentContent.contextInfo, { forwardingScore: 1, isForwarded: true })
   assert.equal(message.forwarded, true)
   assert.equal(message.media.kind, 'audio')
+})
+
+test('sendFile sends the transcoded mp3 when ffmpeg converted the audio', async () => {
+  let sentContent: any
+  let transcodedWith: string[] = []
+  let persisted: Buffer | undefined
+  const fakeBot: any = {
+    sock: {
+      sendMessage: async (_jid: string, content: any) => {
+        sentContent = content
+        return { key: { id: 'sent', remoteJid: 'target@s.whatsapp.net', fromMe: true } }
+      }
+    },
+    contactCache: { resolveOutgoingJid: (jid: string) => jid },
+    messageStore: {
+      persistMedia: async (_jid: string, _id: string, buffer: Buffer) => { persisted = buffer }
+    },
+    recordUiMessage: (message: any) => message,
+    audioTranscoder: async (buffer: Buffer, fileName: string, mimeType: string) => {
+      transcodedWith = [buffer.toString(), fileName, mimeType]
+      return { buffer: Buffer.from('mp3-bytes'), fileName: 'Voice Memo.mp3', mimeType: 'audio/mpeg' }
+    }
+  }
+
+  const message = await Bot.prototype.sendFile.call(
+    fakeBot,
+    'target@s.whatsapp.net',
+    Buffer.from('wav-bytes'),
+    'Voice Memo.wav',
+    'audio/wav',
+    ''
+  )
+
+  assert.deepEqual(transcodedWith, ['wav-bytes', 'Voice Memo.wav', 'audio/wav'])
+  assert.equal(sentContent.audio.toString(), 'mp3-bytes')
+  assert.equal(sentContent.mimetype, 'audio/mpeg')
+  assert.equal(persisted?.toString(), 'mp3-bytes', 'converted bytes are cached')
+  assert.equal(message.media.fileName, 'Voice Memo.mp3')
+  assert.equal(message.media.mimetype, 'audio/mpeg')
+  assert.equal(message.type, 'audioMessage')
 })
 
 test('keeps answered call updates in the chat resolved from the call offer', async () => {
@@ -1111,6 +1152,66 @@ test('getMessages fetches newer messages with the after parameter', async () => 
   assert.equal(usedMethod, 'zrangebyscore')
   assert.equal(messages.length, 1)
   assert.equal(messages[0].id, 'm2')
+})
+
+test('getAllMessages pages through the whole index, not just the recent window', async () => {
+  const jid = '972501234567@s.whatsapp.net'
+  const total = 1203
+  const ids = Array.from({ length: total }, (_, index) => `m${index}`)
+  const payloads = new Map(ids.map((id, index) => [id, JSON.stringify({ id, jid, text: id, sender: 'A', fromMe: false, timestamp: 1000 + index, type: 'conversation' })]))
+  const ranges: Array<[number, number]> = []
+  const fakeBot: any = {
+    messageIndexKey: (j: string) => `idx:${j}`,
+    contactCache: { canonicalJid: (value: string) => value },
+    messageStore: {
+      loadMessagePayloads: async (_j: string, chunk: string[]) => chunk.map(id => payloads.get(id) || null)
+    },
+    publicMessage: (message: any) => message,
+    redis: {
+      zcard: async () => total,
+      zrange: async (_key: string, start: number, stop: number) => {
+        ranges.push([start, stop])
+        return ids.slice(start, stop + 1)
+      }
+    }
+  }
+
+  const messages = await Bot.prototype.getAllMessages.call(fakeBot, jid)
+
+  assert.equal(messages.length, total)
+  assert.equal(messages[0].id, 'm0')
+  assert.equal(messages.at(-1).id, `m${total - 1}`)
+  assert.ok(messages.every((message: any, index: number) => message.timestamp === 1000 + index))
+  assert.ok(ranges.length > 1, 'walks the index in pages rather than one giant range')
+  assert.deepEqual(ranges[0], [0, 499])
+})
+
+test('getAllMessages honours a cap and reads the newest slice', async () => {
+  const jid = '972501234567@s.whatsapp.net'
+  const ids = Array.from({ length: 50 }, (_, index) => `m${index}`)
+  const payloads = new Map(ids.map((id, index) => [id, JSON.stringify({ id, jid, text: id, sender: 'A', fromMe: false, timestamp: index, type: 'conversation' })]))
+  // Redis-style inclusive range with negative offsets (0-based from the end).
+  const sliceRange = (start: number, stop: number) => {
+    const from = start < 0 ? ids.length + start : start
+    const to = stop < 0 ? ids.length + stop : stop
+    return ids.slice(from, to + 1)
+  }
+  const fakeBot: any = {
+    messageIndexKey: (j: string) => `idx:${j}`,
+    contactCache: { canonicalJid: (value: string) => value },
+    messageStore: { loadMessagePayloads: async (_j: string, chunk: string[]) => chunk.map(id => payloads.get(id) || null) },
+    publicMessage: (message: any) => message,
+    redis: {
+      zcard: async () => ids.length,
+      zrange: async (_key: string, start: number, stop: number) => sliceRange(start, stop)
+    }
+  }
+
+  const messages = await Bot.prototype.getAllMessages.call(fakeBot, jid, 10)
+
+  assert.equal(messages.length, 10)
+  assert.equal(messages[0].id, 'm40')
+  assert.equal(messages.at(-1).id, 'm49')
 })
 
 // -------- Button replies --------

@@ -23,6 +23,39 @@ function isImageFile(file) {
   return Boolean(file?.type?.startsWith('image/'))
 }
 
+// Mirrors src/audio-convert.ts — the server transcode is the source of truth,
+// this only tells the user up front that the upload will be sent as MP3.
+const PLAYABLE_AUDIO_MIME = new Set([
+  'audio/mpeg', 'audio/mp3', 'audio/mpeg3', 'audio/x-mpeg-3', 'audio/x-mp3',
+  'audio/aac', 'audio/aacp', 'audio/x-aac', 'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'audio/mp4a-latm'
+])
+const PLAYABLE_AUDIO_EXT = new Set(['mp3', 'mpga', 'mp2', 'aac', 'm4a', 'm4b', 'm4p', 'm4r', 'mp4a'])
+const AUDIO_EXT = new Set([
+  ...PLAYABLE_AUDIO_EXT,
+  'wav', 'wave', 'ogg', 'oga', 'opus', 'flac', 'amr', 'awb',
+  'aiff', 'aif', 'aifc', 'wma', 'mka', 'caf', 'au', 'snd', 'ra', 'ape', 'wv', 'voc'
+])
+
+function fileExtension(name) {
+  const clean = String(name || '').toLowerCase()
+  const dot = clean.lastIndexOf('.')
+  return dot < 0 ? '' : clean.slice(dot + 1)
+}
+
+function isAudioFile(file) {
+  const mime = String(file?.type || '').split(';')[0].trim().toLowerCase()
+  if (mime.startsWith('audio/') || mime === 'application/ogg') return true
+  return AUDIO_EXT.has(fileExtension(file?.name))
+}
+
+function willConvertAudio(file) {
+  if (!isAudioFile(file)) return false
+  const mime = String(file?.type || '').split(';')[0].trim().toLowerCase()
+  const ext = fileExtension(file?.name)
+  if (mime && mime !== 'application/octet-stream') return !PLAYABLE_AUDIO_MIME.has(mime)
+  return !PLAYABLE_AUDIO_EXT.has(ext)
+}
+
 function formatFileSize(size) {
   const value = Number(size) || 0
   if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`
@@ -122,6 +155,7 @@ onUnmounted(clearFiles)
                   <span class="upload-file-copy">
                     <strong dir="auto">{{ file.name }}</strong>
                     <small>{{ formatFileSize(file.size) }}</small>
+                    <small v-if="willConvertAudio(file)" class="upload-file-convert">🎧 יומר ל‑MP3 לפני השליחה</small>
                   </span>
                   <button type="button" class="upload-file-remove" title="הסר" @click="removeFile(index)">×</button>
                 </li>

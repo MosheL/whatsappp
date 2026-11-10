@@ -2454,6 +2454,7 @@ button {
 .upload-file-list .upload-file-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 }
 .upload-file-list .upload-file-copy strong { color: #26333b; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .upload-file-list .upload-file-copy small { color: #66727b; font-size: 11px }
+.upload-file-list .upload-file-copy .upload-file-convert { color: #166a5b; font-weight: 600 }
 .upload-file-list .upload-file-remove { background: transparent; border: 0; color: #5f6d75; cursor: pointer; font-size: 18px; height: 26px; line-height: 1; width: 26px }
 .upload-file-list .upload-file-remove:hover { color: #c0392b }
 
@@ -3599,6 +3600,22 @@ button {
   font-size: 11px;
   line-height: 1.4;
   margin: 6px 0 0;
+}
+.chat-info-share-item {
+  margin-top: 6px;
+}
+.chat-info-share-item + .chat-info-share-item {
+  border-top: 1px dashed #dbe3e8;
+  margin-top: 10px;
+  padding-top: 8px;
+}
+.chat-info-share-media-hint {
+  word-break: break-all;
+}
+.chat-info-share-hint code {
+  background: #e6edf0;
+  border-radius: 3px;
+  padding: 0 3px;
 }
 .chat-info-share-link {
   align-items: center;

@@ -36,7 +36,7 @@ function createRedis() {
   }
 }
 
-test('creates a token that reads back its group', async () => {
+test('creates a token that reads back its chat', async () => {
   const store = new ShareStore(createRedis(), 'test')
   const link = await store.create('bot1', '123@g.us', 'weekly')
   assert.equal(link.bot, 'bot1')
@@ -57,7 +57,7 @@ test('generates unique tokens per link', async () => {
   assert.equal((await store.list('bot1', '123@g.us')).length, 2)
 })
 
-test('lists only the links for the requested group', async () => {
+test('lists only the links for the requested chat', async () => {
   const store = new ShareStore(createRedis(), 'test')
   await store.create('bot1', '123@g.us', 'a')
   await store.create('bot1', '456@g.us', 'b')
@@ -72,7 +72,7 @@ test('unknown tokens resolve to undefined', async () => {
   assert.equal(await store.get(''), undefined)
 })
 
-test('revoking a token removes it from reads and the group list', async () => {
+test('revoking a token removes it from reads and the chat list', async () => {
   const store = new ShareStore(createRedis(), 'test')
   const link = await store.create('bot1', '123@g.us')
   assert.equal(await store.delete(link.token), true)
@@ -89,5 +89,26 @@ test('drops tokens whose payload disappeared', async () => {
   // Simulate a partial write / manual key deletion.
   redis.strings.delete(`test:share:${link.token}`)
   assert.equal((await store.list('bot1', '123@g.us')).length, 0)
-  assert.equal(redis.sets.get('test:share-group:bot1:123@g.us')?.size, 0)
+  assert.equal(redis.sets.get('test:share-chat:bot1:123@g.us')?.size, 0)
+})
+
+test('lists and migrates links stored under the legacy group index', async () => {
+  const redis = createRedis()
+  const store = new ShareStore(redis, 'test')
+  const jid = '972501234567@s.whatsapp.net'
+  const token = 'legacy-token'
+  // A link written by an older version: payload under `share:<token>` but
+  // indexed only under the group-specific set.
+  redis.strings.set(`test:share:${token}`, JSON.stringify({ token, bot: 'bot1', jid, label: 'old', createdAt: 1 }))
+  redis.sets.set(`test:share-group:bot1:${jid}`, new Set([token]))
+
+  const list = await store.list('bot1', jid)
+  assert.equal(list.length, 1)
+  assert.equal(list[0].label, 'old')
+  assert.equal(redis.sets.get(`test:share-chat:bot1:${jid}`)?.has(token), true, 'migrated to the chat index')
+
+  // Revoking also cleans the legacy index.
+  assert.equal(await store.delete(token), true)
+  assert.equal(redis.sets.get(`test:share-chat:bot1:${jid}`)?.size, 0)
+  assert.equal(redis.sets.get(`test:share-group:bot1:${jid}`)?.size, 0)
 })

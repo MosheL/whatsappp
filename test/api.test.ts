@@ -328,6 +328,7 @@ test('share link lifecycle: create, read anonymously, revoke', async () => {
     const anon = await json(`/api/share/${token}`)
     assert.equal(anon.response.status, 200)
     assert.equal(anon.body.group?.name, 'עדר הבוטים')
+    assert.equal(anon.body.chat?.isGroup, true, 'group chat is reported as a group')
     assert.equal(anon.body.count, 3)
     assert.equal(anon.body.messages?.length, 3)
     assert.equal(anon.body.messages[0].text, 'msg 1')
@@ -344,6 +345,111 @@ test('share link lifecycle: create, read anonymously, revoke', async () => {
     assert.equal(after.response.status, 404)
   } finally {
     bots.delete('bot1')
+  }
+})
+
+// Private (1:1) chats are shareable too, and the same token exposes their
+// attachments: an index of files plus a byte download per message id.
+test('private chat share exposes attachments and downloads them anonymously', async () => {
+  ;(shareStore as any).redis = createShareRedisStub()
+  const privateJid = '972501234567@s.whatsapp.net'
+  const fakeBot = {
+    botId: 'bot2',
+    authKey: 'auth2',
+    status: () => ({ id: 'fake-account-2', authKey: 'auth2', label: 'fake2', connection: 'connected', qr: '', chatCount: 1, unreadSessionCount: 0 }),
+    contactCache: { canonicalJid: (jid: string) => jid },
+    chats: new Map([[privateJid, { jid: privateJid, name: 'דנה', phoneNumber: '972501234567', isGroup: false }]]),
+    getMessages: async (jid: string, limit: number) => [
+      { id: 'a1', jid, text: 'שלום', type: 'conversation', fromMe: false, sender: 'דנה', timestamp: 1700000000000 },
+      {
+        id: 'm1', jid, text: 'doc.pdf', type: 'documentMessage', fromMe: true, sender: 'אני', timestamp: 1700000001000,
+        downloadable: true,
+        media: { kind: 'document', mimetype: 'application/pdf', caption: '', fileName: 'doc.pdf', url: '' }
+      }
+    ].slice(0, limit),
+    getMedia: async (_jid: string, id: string) => {
+      if (id !== 'm1') throw new Error('Media message not found')
+      return { buffer: Buffer.from('pdf-bytes'), mimetype: 'application/pdf', fileName: 'doc.pdf' }
+    }
+  }
+  const allHistory = [
+    { id: 'h1', jid: privateJid, text: 'היסטוריה 1', type: 'conversation', fromMe: false, sender: 'דנה', timestamp: 1600000000000 },
+    { id: 'h2', jid: privateJid, text: 'היסטוריה 2', type: 'conversation', fromMe: true, sender: 'אני', timestamp: 1600000001000 },
+    {
+      id: 'h3', jid: privateJid, text: 'old.pdf', type: 'documentMessage', fromMe: false, sender: 'דנה', timestamp: 1600000002000,
+      downloadable: true,
+      media: { kind: 'document', mimetype: 'application/pdf', caption: '', fileName: 'old.pdf', url: '' }
+    }
+  ]
+  ;(fakeBot as any).getAllMessages = async () => allHistory
+  bots.set('bot2', fakeBot as any)
+  try {
+    const cookie = await login()
+    const created = await json('/api/shares', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ bot: 'bot2', jid: privateJid })
+    })
+    assert.equal(created.response.status, 200)
+    const token = created.body.link?.token
+    assert.ok(token)
+
+    // Messages of a private chat, no session cookie needed.
+    const anon = await json(`/api/share/${token}`)
+    assert.equal(anon.response.status, 200)
+    assert.equal(anon.body.chat?.isGroup, false)
+    assert.equal(anon.body.chat?.name, 'דנה')
+    assert.equal(anon.body.chat?.phoneNumber, '972501234567')
+    assert.equal(anon.body.count, 2)
+    assert.equal(anon.body.messages[0].mediaUrl, undefined, 'text messages have no media URL')
+    assert.equal(anon.body.messages[1].mediaUrl, `/api/share/${token}/media?id=m1`)
+
+    // Attachment index carries the same download URL.
+    const attachments = await json(`/api/share/${token}/attachments`)
+    assert.equal(attachments.response.status, 200)
+    assert.equal(attachments.body.count, 1)
+    assert.equal(attachments.body.attachments[0].id, 'm1')
+    assert.equal(attachments.body.attachments[0].fileName, 'doc.pdf')
+    assert.equal(attachments.body.attachments[0].url, `/api/share/${token}/media?id=m1`)
+
+    // The attachment itself downloads without a session.
+    const download = await fetch(`${baseUrl}${attachments.body.attachments[0].url}`)
+    assert.equal(download.status, 200)
+    assert.equal(download.headers.get('content-type'), 'application/pdf')
+    assert.match(download.headers.get('content-disposition') || '', /^attachment;/)
+    assert.equal(await download.text(), 'pdf-bytes')
+
+    // A token cannot be pointed at media from another chat.
+    const foreign = await json(`/api/share/${token}/media?id=m1&jid=999@other.chat`)
+    assert.equal(foreign.response.status, 403)
+
+    const missingId = await json(`/api/share/${token}/media`)
+    assert.equal(missingId.response.status, 400)
+
+    const unknownAttachment = await json(`/api/share/${token}/media?id=nope`)
+    assert.equal(unknownAttachment.response.status, 404)
+
+    const unknownEndpoint = await json(`/api/share/${token}/nope`)
+    assert.equal(unknownEndpoint.response.status, 404)
+
+    // `?limit=all` escapes the recent window and returns the whole history.
+    const full = await json(`/api/share/${token}?limit=all`)
+    assert.equal(full.response.status, 200)
+    assert.equal(full.body.limit, 'all')
+    assert.equal(full.body.count, allHistory.length)
+    assert.deepEqual(full.body.messages.map((message: any) => message.id), ['h1', 'h2', 'h3'])
+    assert.equal(full.body.messages[0].timestamp, 1600000000000, 'oldest message comes first')
+
+    const fullAttachments = await json(`/api/share/${token}/attachments?limit=all`)
+    assert.equal(fullAttachments.response.status, 200)
+    assert.equal(fullAttachments.body.limit, 'all')
+    assert.deepEqual(fullAttachments.body.attachments.map((attachment: any) => attachment.id), ['h3'])
+
+    // `?all=1` is the equivalent shorthand.
+    const shorthand = await json(`/api/share/${token}?all=1`)
+    assert.equal(shorthand.body.count, allHistory.length)
+  } finally {
+    bots.delete('bot2')
   }
 })
 

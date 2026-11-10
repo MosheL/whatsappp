@@ -1,5 +1,10 @@
 FROM node:24-alpine
 
+# ffmpeg transcodes dragged audio (wav/flac/ogg/amr/...) into MP3, which is
+# what WhatsApp can play inline. ~50MB in the image, so keep it here rather
+# than relying on the host having it.
+RUN apk add --no-cache ffmpeg
+
 WORKDIR /app
 
 ENV NODE_ENV=production

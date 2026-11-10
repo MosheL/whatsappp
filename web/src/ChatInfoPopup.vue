@@ -278,19 +278,32 @@ async function addToGroup(group) {
   }
 }
 
-// -------- Share API links (group only) --------
+// -------- Share API links (groups and private chats) --------
 const shareLinks = ref([])
 const shareLoading = ref(false)
 const shareCreating = ref(false)
 const shareError = ref('')
 const copiedToken = ref('')
+const copiedAttachments = ref('')
+const copiedAll = ref('')
 
 function shareUrl(link) {
   return `${window.location.origin}/api/share/${encodeURIComponent(link.token)}`
 }
 
+// JSON index of every attachment in the chat, with a download URL per message.
+function attachmentsUrl(link) {
+  return `${shareUrl(link)}/attachments`
+}
+
+// Same payload, but the whole stored history instead of the latest 300 messages.
+function allHistoryUrl(link) {
+  return `${shareUrl(link)}?limit=all`
+}
+
+
 async function loadShareLinks() {
-  if (!isGroup.value || !props.chat?.jid) return
+  if (!props.chat?.jid) return
   shareLoading.value = true
   shareError.value = ''
   try {
@@ -343,6 +356,32 @@ async function copyShareUrl(link) {
     }, 1500)
   } catch {
     // Clipboard may be unavailable (http origins): fall back to a prompt.
+    window.prompt('העתק את הקישור', url)
+  }
+}
+
+async function copyAttachmentsUrl(link) {
+  const url = attachmentsUrl(link)
+  try {
+    await navigator.clipboard.writeText(url)
+    copiedAttachments.value = link.token
+    setTimeout(() => {
+      if (copiedAttachments.value === link.token) copiedAttachments.value = ''
+    }, 1500)
+  } catch {
+    window.prompt('העתק את הקישור', url)
+  }
+}
+
+async function copyAllHistoryUrl(link) {
+  const url = allHistoryUrl(link)
+  try {
+    await navigator.clipboard.writeText(url)
+    copiedAll.value = link.token
+    setTimeout(() => {
+      if (copiedAll.value === link.token) copiedAll.value = ''
+    }, 1500)
+  } catch {
     window.prompt('העתק את הקישור', url)
   }
 }
@@ -408,11 +447,14 @@ watch(() => props.chat, (chat) => {
   editingDesc.value = false
   shareLinks.value = []
   shareError.value = ''
+  copiedToken.value = ''
+  copiedAttachments.value = ''
+  copiedAll.value = ''
   inviteLink.value = ''
   copiedInvite.value = ''
+  if (props.chat?.jid) loadShareLinks()
   if (isGroup.value) {
     loadGroupInfo()
-    loadShareLinks()
     loadInviteLink()
   }
 }, { immediate: true })
@@ -526,7 +568,7 @@ watch(() => props.chat, (chat) => {
       <p v-if="actionError" class="chat-info-error">{{ actionError }}</p>
 
       <!-- Share API link (read-only, no login) -->
-      <div v-if="isGroup" class="chat-info-share">
+      <div v-if="chat?.jid" class="chat-info-share">
         <div class="chat-info-share-head">
           <span class="chat-info-desc-label">קישור API (קריאה ללא התחברות)</span>
           <button
@@ -536,20 +578,36 @@ watch(() => props.chat, (chat) => {
             @click="createShareLink"
           >{{ shareCreating ? 'יוצר…' : '➕ צור קישור' }}</button>
         </div>
-        <p class="chat-info-share-hint">קישור ציבורי לקריאת 300 ההודעות האחרונות בקבוצה (JSON), לשימוש כלי AI.</p>
+        <p class="chat-info-share-hint">
+          קישור ציבורי לקריאת 300 ההודעות האחרונות {{ isGroup ? 'בקבוצה' : 'בשיחה' }} (JSON), לשימוש כלי AI.
+          להורדת <strong>כל ההיסטוריה</strong> הוסיפו <code>?limit=all</code> לכתובת.
+        </p>
         <p v-if="shareError" class="chat-info-error">{{ shareError }}</p>
         <p v-else-if="shareLoading" class="chat-info-empty">טוען…</p>
         <p v-else-if="!shareLinks.length" class="chat-info-empty">אין קישורים פעילים</p>
-        <div
-          v-for="link in shareLinks"
-          :key="link.token"
-          class="chat-info-share-link"
-        >
-          <input class="chat-info-share-url" dir="ltr" readonly :value="shareUrl(link)" @focus="$event.target.select()" />
-          <button type="button" class="chat-info-share-copy" @click="copyShareUrl(link)">
-            {{ copiedToken === link.token ? '✓ הועתק' : 'העתק' }}
-          </button>
-          <button type="button" class="chat-info-share-revoke" title="בטל קישור" @click="revokeShareLink(link)">🗑️</button>
+        <div v-for="link in shareLinks" :key="link.token" class="chat-info-share-item">
+          <div class="chat-info-share-link">
+            <input class="chat-info-share-url" dir="ltr" readonly :value="shareUrl(link)" @focus="$event.target.select()" />
+            <button type="button" class="chat-info-share-copy" @click="copyShareUrl(link)">
+              {{ copiedToken === link.token ? '✓ הועתק' : 'העתק' }}
+            </button>
+            <button type="button" class="chat-info-share-revoke" title="בטל קישור" @click="revokeShareLink(link)">🗑️</button>
+          </div>
+          <div class="chat-info-share-link">
+            <input class="chat-info-share-url" dir="ltr" readonly :value="attachmentsUrl(link)" @focus="$event.target.select()" />
+            <button type="button" class="chat-info-share-copy" @click="copyAttachmentsUrl(link)">
+              {{ copiedAttachments === link.token ? '✓ הועתק' : 'העתק קבצים' }}
+            </button>
+          </div>
+          <div class="chat-info-share-link">
+            <input class="chat-info-share-url" dir="ltr" readonly :value="allHistoryUrl(link)" @focus="$event.target.select()" />
+            <button type="button" class="chat-info-share-copy" @click="copyAllHistoryUrl(link)">
+              {{ copiedAll === link.token ? '✓ הועתק' : 'כל ההיסטוריה' }}
+            </button>
+          </div>
+          <p class="chat-info-share-hint chat-info-share-media-hint" dir="ltr">
+            {{ shareUrl(link) }}/media?id=&lt;message-id&gt;
+          </p>
         </div>
       </div>
 

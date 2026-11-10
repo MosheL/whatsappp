@@ -215,6 +215,10 @@ docker compose up    # Server + Redis + UI
 | `TRANSCRIBE_MODEL` | `ivrit-ai/whisper-large-v3-turbo-ct2` | Model hint sent to the transcription server |
 | `TRANSCRIBE_TIMEOUT_MS` | `300000` | Transcription request timeout |
 | `WHATSAPP_SHARE_LIMIT` | `300` | Max (and default) message count for public share links |
+| `WHATSAPP_SHARE_ALLOW_ALL` | `true` | Allow `?limit=all` on public share links (whole stored history) |
+| `WHATSAPP_SHARE_ALL_MAX` | `0` | Optional cap for `?limit=all` (`0` = no cap, return everything) |
+| `FFMPEG_PATH` | `ffmpeg` | ffmpeg binary used to transcode uploaded audio |
+| `FFMPEG_TIMEOUT_MS` | `120000` | Hard timeout for one audio transcode |
 
 ## API endpoints
 | Method | Path | Description |
@@ -231,8 +235,10 @@ docker compose up    # Server + Redis + UI
 | POST | `/api/edit-message` | Edit an outgoing text message `{ bot, jid, id, text }` |
 | GET | `/api/group-invite` | Group join link (`{ link }`); fails when the bot is not a group admin |
 | GET | `/api/media` | Download media by JID + message ID |
-| GET | `/api/share/&#8203;<token>` | **Public** (no login): last N messages of a shared group (JSON) |
-| GET | `/api/shares?bot=&jid=` | List share links for a group (UI session) |
+| GET | `/api/share/&#8203;<token>` | **Public** (no login): last N messages of a shared chat — group or private (JSON) |
+| GET | `/api/share/&#8203;<token>/attachments` | **Public** (no login): attachment index of the shared chat, with download URLs |
+| GET | `/api/share/&#8203;<token>/media?id=&lt;messageId&gt;` | **Public** (no login): download one attachment from the shared chat |
+| GET | `/api/shares?bot=&jid=` | List share links for a chat — group or private (UI session) |
 | POST | `/api/shares` | Create a share link `{ bot, jid, label? }` (UI session) |
 | DELETE | `/api/shares/<token>` | Revoke a share link (UI session) |
 
@@ -248,45 +254,123 @@ curl -X POST http://localhost:3000/send \
   -d '{"bot":"bot1","jid":"972501234567@s.whatsapp.net","text":"hello"}'
 ```
 
-### Public group share (for AI / automation)
+### Public chat share (for AI / automation)
 
-Create a link from the UI: open a group → פרטי שיחה → "קישור API" → **צור קישור**.
-The generated URL is readable **without login** and returns the group's last 300
-messages as JSON (tune with `?limit=1..300`, cap via `WHATSAPP_SHARE_LIMIT`):
+Create a link from the UI: open a chat — a group **or** a private (1:1)
+conversation — → פרטי שיחה → "קישור API" → **צור קישור**. The generated URL is
+readable **without login** and returns the chat's last 300 messages as JSON
+(tune with `?limit=1..300`, cap via `WHATSAPP_SHARE_LIMIT`).
+
+To download **all history** the server still has (everything kept by
+`UI_STORED_MESSAGE_LIMIT`, `0` = unlimited) add `?limit=all` — or the `?all=1`
+shorthand. It is off only when `WHATSAPP_SHARE_ALLOW_ALL=false`, and
+`WHATSAPP_SHARE_ALL_MAX` can cap it (e.g. `5000`):
 
 ```bash
-curl http://localhost:3000/api/share/<token>?limit=300
+curl http://localhost:3000/api/share/<token>?limit=300   # recent window
+curl http://localhost:3000/api/share/<token>?limit=all   # whole history
+curl http://localhost:3000/api/share/<token>/attachments?limit=all
 ```
+
+The UI exposes both links per share token ("העתק" for the window, "כל ההיסטוריה"
+for everything), and responses echo `limit: "all"` when the full history was
+returned.
 
 ```json
 {
   "token": "…",
-  "group": { "jid": "123@g.us", "name": "…", "participantCount": 12, "isGroup": true },
+  "chat": { "jid": "972501234567@s.whatsapp.net", "name": "דנה", "phoneNumber": "972501234567", "participantCount": null, "isGroup": false },
+  "group": { "jid": "…", "name": "…", "isGroup": false },
   "limit": 300,
   "count": 2,
-  "messages": [ { "id": "…", "sender": "…", "text": "…", "timestamp": 1700000000, "…": "…" } ]
+  "messages": [
+    { "id": "…", "sender": "…", "text": "שלום", "timestamp": 1700000000, "…": "…" },
+    { "id": "m1", "type": "documentMessage", "media": { "kind": "document", "fileName": "doc.pdf", "mimetype": "application/pdf" }, "mediaUrl": "/api/share/<token>/media?id=m1" }
+  ]
 }
 ```
 
+`chat` describes the shared conversation (group or private); `group` is kept as
+a **deprecated** alias for older consumers, so existing integrations keep working.
+
+Share links are created per chat, exactly like WhatsApp conversations: open a
+group or a private contact, the same "קישור API" section appears in both.
+
+#### Downloading attachments
+
+Every message that carries a file gets a `mediaUrl` (same shape for groups and
+private chats, so a single client handles both):
+
+```bash
+curl -OJ http://localhost:3000/api/share/<token>/media?id=<messageId>
+```
+
+- The response body is the attachment itself (`Content-Type` from the message,
+  `Content-Disposition: attachment; filename=…`).
+- `GET /api/share/<token>/attachments[?limit=300]` returns a JSON index of the
+  chat's files (`id`, `kind`, `mimetype`, `fileName`, `caption`, `timestamp`,
+  `ready`, `url`) — convenient to enumerate before downloading.
+- Media access is scoped to the token's own chat: passing a `jid` from another
+  chat is rejected with `403`, and the token cannot read anything else.
+
 Notes:
 - Tokens are unguessable random strings stored in Redis (`ui:share:*`); anyone
-  holding the URL can read the group, so treat it like a secret. Revoke from the
-  same UI section (🗑️) or `DELETE /api/shares/<token>`.
+  holding the URL can read the chat and its attachments, so treat it like a
+  secret. Revoke from the same UI section (🗑️) or `DELETE /api/shares/<token>`.
 - Messages are the same public payloads the UI receives (no raw wire data).
-- `WHATSAPP_SHARE_LIMIT` (default 300) caps both the default and max `limit`.
+- `WHATSAPP_SHARE_LIMIT` (default 300) caps both the default and max numeric
+  `limit`; `?limit=all` bypasses it (bounded by `WHATSAPP_SHARE_ALL_MAX`, when
+  set) and by how much history is still stored in Redis.
+
+### Audio uploads (ffmpeg)
+
+WhatsApp can only play **MP3** and **AAC/M4A** audio inline. When a file is
+dragged or picked in the UI, the browser sends it to `POST /api/send-file`
+verbatim; `bot.sendFile()` therefore checks the mimetype/extension and, for
+anything else (wav, flac, ogg/opus, amr, aiff, wma, ...), transcodes it to MP3
+before sending:
+
+```
+audio uploaded ──> isAudioUpload? ──no──> send unchanged
+                        │yes
+                        ▼
+                  isWhatsAppAudio? ──yes──> send unchanged (no quality loss)
+                        │no
+                        ▼
+              ffmpeg -i <tmp> -vn -map_metadata -1 -c:a libmp3lame -b:a 128k <tmp>.mp3
+                        │
+                        ▼
+                 sent as audio/mpeg, stored as .mp3 in Redis media cache
+```
+
+Notes:
+- The conversion happens **server-side** in `src/audio-convert.ts`; the UI only
+  shows a "יומר ל-MP3" hint in the upload modal (`web/src/UploadModal.vue`).
+- Inputs go through temp files (`os.tmpdir()`), not stdin, because MP4/M4A
+  containers with a trailing `moov` atom are unreliable over a pipe. The temp
+  dir is always removed.
+- ffmpeg is **required** for non-MP3/AAC audio: the official image installs it
+  (`Dockerfile` → `apk add ffmpeg`), and `FFMPEG_PATH` lets you point at another
+  binary. Without it the upload fails with
+  `ffmpeg not found (ffmpeg). Install ffmpeg or set FFMPEG_PATH.`
+- Already-supported audio is passed through untouched, so MP3/M4A uploads keep
+  their original bytes and name.
+- One conversion at a time is capped by `FFMPEG_TIMEOUT_MS` (default 120s); the
+  uploaded size limit stays at the 50 MB enforced by `busboy`.
 
 ## Module dependencies
 ```
 bot.ts ───┬── contact-cache.ts (contacts, LIDs, presence, sender display)
            ├── message-store.ts (message persistence in Redis)
            ├── message-processor.ts (pure message parsing)
+           ├── audio-convert.ts (ffmpeg: unsupported audio -> MP3)
            └── chat-store.ts (chat cache, message patching, call events)
                └── (uses contact-cache.ts and message-processor.ts)
 ```
 
 ## Tests
 ```bash
-npm run test:unit    # Unit tests (contact-cache, message-store)
+npm run test:unit    # Unit tests (contact-cache, message-store, audio-convert, ...)
 npm run test:api     # API endpoint tests
 npm run test:e2e     # E2E live tests (requires .env.e2e)
 ```
