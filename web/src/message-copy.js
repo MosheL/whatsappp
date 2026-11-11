@@ -85,17 +85,18 @@ export function messageCopyBody(message) {
  *
  * `time` is only passed when copying several messages; `body` lets the caller
  * supply the exact (possibly partial) selected text; `withQuote` adds the
- * quoted message the bubble replies to.
+ * quoted message the bubble replies to; `withSender: false` copies the bare
+ * text (used when a selection holds a single message).
  */
-export function messageCopyText(message, { time = '', body = null, withQuote = false } = {}) {
+export function messageCopyText(message, { time = '', body = null, withQuote = false, withSender = true } = {}) {
   if (!message) return ''
   const quoted = withQuote === null ? Boolean(message.quoted) : Boolean(withQuote)
   const lines = []
   if (quoted && message.quoted) lines.push(quotedCopyLine(message.quoted))
   const content = body === null ? messageCopyBody(message) : String(body || '').trim()
   if (content) {
-    const head = time ? `[${time}] ${senderLabel(message)}` : senderLabel(message)
-    lines.push(`${head}: ${content}`)
+    const head = withSender ? (time ? `[${time}] ${senderLabel(message)}` : senderLabel(message)) : ''
+    lines.push(head ? `${head}: ${content}` : content)
   }
   return lines.join('\n')
 }

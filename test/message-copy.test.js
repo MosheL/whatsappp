@@ -42,6 +42,8 @@ test('prefixes the sender and includes the quoted message on request', () => {
   assert.equal(messageCopyText(message, { withQuote: true }), '↳ דני: מה קורה?\nאני: בסדר')
   assert.equal(messageCopyText(message, { withQuote: true, time: '14:32' }), '↳ דני: מה קורה?\n[14:32] אני: בסדר')
   assert.equal(messageCopyText(message, { body: 'בס' }), 'אני: בס')
+  assert.equal(messageCopyText(message, { withSender: false }), 'בסדר')
+  assert.equal(messageCopyText(message, { withSender: false, body: 'בס' }), 'בס')
 })
 
 test('quotes fall back to the quoted media kind', () => {
@@ -56,4 +58,9 @@ test('joins several selected messages and drops empty ones', () => {
     { message: { fromMe: true }, options: {} }
   ]
   assert.equal(messagesCopyText(entries), '[10:00] דני: היי\n[10:01] אני: מה נשמע')
+})
+
+test('drops the sender prefix for a single selected message', () => {
+  const entries = [{ message: { fromMe: false, sender: 'דני', text: 'היי' }, options: { withSender: false } }]
+  assert.equal(messagesCopyText(entries), 'היי')
 })

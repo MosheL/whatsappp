@@ -321,6 +321,7 @@ function selectedTextIn(range, node) {
 
 // Per-bubble copy options: full text for fully selected bubbles, the partial
 // selected text otherwise, plus the quote when it is part of the selection.
+// The sender prefix is only added when the selection spans several bubbles.
 function copyBlockOptions(range, bubble, message, multiple) {
   const full = bubbleFullySelected(range, bubble)
   const quoteSelected = intersects(range, bubble.querySelector('.quoted-message'))
@@ -332,6 +333,7 @@ function copyBlockOptions(range, bubble, message, multiple) {
   else body = messageCopyBody(message)
   return {
     time: multiple ? formatTime(message.timestamp) : '',
+    withSender: multiple,
     body,
     withQuote: Boolean(message.quoted) && (full || quoteSelected)
   }
