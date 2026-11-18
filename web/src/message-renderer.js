@@ -1,6 +1,8 @@
 // Shared message rendering helpers used by both App.vue and ChatThread.vue
 // Extracted to eliminate duplication between the two components
 
+import { formatStatusTime } from './helpers.js'
+
 /**
  * Build the media download URL for a message.
  */
@@ -250,6 +252,188 @@ function readReceiptCount(receipts) {
   }
   return readUsers.size
 }
+
+/**
+ * Receipt timestamps arrive as proto int64 values: usually epoch seconds, but
+ * anything large enough to only make sense in milliseconds is passed through.
+ * Returns milliseconds (0 when missing/invalid).
+ */
+export function receiptTime(value) {
+  const num = Number(value || 0)
+  if (!Number.isFinite(num) || num <= 0) return 0
+  return num < 1e12 ? num * 1000 : num
+}
+
+/** Non-own receipts attached to a message (the single latest one plus the list). */
+function otherReceipts(message) {
+  const list = []
+  if (message?.receipt) list.push(message.receipt)
+  if (Array.isArray(message?.userReceipt)) list.push(...message.userReceipt)
+  return list.filter(receipt => receipt && !receipt.own)
+}
+
+/**
+ * When the message reached its current state, in milliseconds: the read time
+ * if anyone read it, else the delivery time, else the time it was sent.
+ */
+export function messageStatusTimestamp(message) {
+  const receipts = otherReceipts(message)
+  const readAt = Math.max(0, ...receipts.map(receipt => receiptTime(receipt.readTimestamp || receipt.playedTimestamp)))
+  if (readAt) return readAt
+  const deliveredAt = Math.max(0, ...receipts.map(receipt => receiptTime(receipt.receiptTimestamp || receipt.deliveryTimestamp)))
+  if (deliveredAt) return deliveredAt
+  // 1:1 chats get no receipt objects, only { status, messageTimestamp } updates.
+  const statusAt = receiptTime(message?.statusTimestamp)
+  if (statusAt) return statusAt
+  return receiptTime(message?.timestamp)
+}
+
+/**
+ * Candidate lookup keys for a JID: the full JID, its user part, the phone JID
+ * built from it and a display form with a leading plus.
+ */
+export function jidNameKeys(jid) {
+  const raw = String(jid || '').trim()
+  if (!raw) return []
+  const user = raw.split('@')[0].split(':')[0] || ''
+  const digits = user.replace(/[^\d]/g, '')
+  // A LID's digits are not a phone number, so never invent a phone JID from them.
+  const phoneKeys = String(jid).includes('@lid') ? [] : [digits && `${digits}@s.whatsapp.net`]
+  return [...new Set([raw, user, ...phoneKeys, digits && `+${digits}`].filter(Boolean))]
+}
+
+// Meta key on the index Map: LID user part → phone digits, so a participant's
+// LID receipt and phone receipt collapse into one identity.
+const LID_PHONE_MAP = Symbol('lidPhoneMap')
+
+function nameLooksLikePhone(name) {
+  return /^[+\d\s()-]+$/.test(String(name || ''))
+}
+
+// The server labels participants it cannot name this way; it is not a name.
+const PLACEHOLDER_NAMES = new Set(['unknown participant', 'unknown', 'לא ידוע'])
+
+function isPlaceholderName(name) {
+  const value = String(name || '').trim().toLowerCase()
+  return !value || PLACEHOLDER_NAMES.has(value)
+}
+
+function phoneLabel(jid) {
+  const raw = String(jid || '')
+  if (!raw || raw.includes('@lid')) return ''
+  return `+${raw.split('@')[0].split(':')[0].replace(/[^\d]/g, '')}`
+}
+
+/**
+ * Build a JID → display-name index out of contact/participant entries
+ * ({ jid, name, phoneNumber }). Entries are given in priority order: a real
+ * name always overrides a phone-number-shaped placeholder registered earlier.
+ *
+ * Participants the server could not name (`Unknown participant`) still get a
+ * phone label under their JID, so an unnamed reader is never dropped and its
+ * LID-only receipt can be shown as a number.
+ */
+export function buildJidNameIndex(entries) {
+  const index = new Map()
+  index[LID_PHONE_MAP] = new Map()
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const name = String(entry?.name || entry?.subject || '').trim()
+    const display = isPlaceholderName(name) ? phoneLabel(entry?.phoneNumber) : name
+    if (!display) continue
+    const lidUser = String(entry?.jid || '').split('@')[0].split(':')[0]
+    const phone = String(entry?.phoneNumber || '').replace(/[^\d]/g, '')
+    if (phone && String(entry?.jid || '').endsWith('@lid') && lidUser) index[LID_PHONE_MAP].set(lidUser, phone)
+    for (const jid of [entry.jid, entry.phoneNumber, entry.subject]) {
+      for (const key of jidNameKeys(jid)) {
+        const existing = index.get(key)
+        if (!existing || nameLooksLikePhone(existing)) index.set(key, display)
+      }
+    }
+  }
+  return index
+}
+
+function lookupJidName(index, key) {
+  if (!index || !key) return ''
+  return String((typeof index.get === 'function' ? index.get(key) : index[key]) || '')
+}
+
+/**
+ * Display name for a JID, falling back to the phone number (never to a raw
+ * `@lid` id, which is meaningless to the user).
+ */
+export function displayNameForJid(jid, index) {
+  const raw = String(jid || '')
+  if (!raw) return ''
+  for (const key of jidNameKeys(raw)) {
+    const name = lookupJidName(index, key)
+    if (name && !isPlaceholderName(name)) return name
+  }
+  const user = raw.split('@')[0].split(':')[0]
+  if (!user || raw.includes('@lid') || !/\d/.test(user)) return ''
+  return `+${user.replace(/[^\d]/g, '')}`
+}
+
+/**
+ * Names of the participants who read an outgoing group message (own devices
+ * excluded, deduplicated).
+ */
+function receiptJids(receipt) {
+  return [receipt?.userJid, receipt?.participant, receipt?.participantPn, receipt?.participantAlt]
+    .filter(jid => jid && !String(jid).endsWith('@g.us'))
+}
+
+/**
+ * Identity of a reader: a participant can show up once as a phone JID and once
+ * as a LID, so prefer the phone form and only fall back to the LID. Names are
+ * display-only — two different people may share one.
+ */
+function readerIdentity(jids, nameIndex) {
+  const lidToPhone = nameIndex?.[LID_PHONE_MAP]
+  const user = jid => String(jid).split('@')[0].split(':')[0].replace(/[^\d]/g, '')
+  const phone = jids.find(jid => !String(jid).endsWith('@lid'))
+  if (phone && user(phone)) return `phone:${user(phone)}`
+  const lid = jids.find(jid => String(jid).endsWith('@lid'))
+  if (!lid || !user(lid)) return ''
+  const mapped = lidToPhone?.get(user(lid))
+  return mapped ? `phone:${mapped}` : `lid:${user(lid)}`
+}
+
+/**
+ * Names of the participants who read an outgoing group message (own devices
+ * excluded, one entry per participant).
+ */
+export function messageReadBy(message, nameIndex) {
+  const names = []
+  const seen = new Set()
+  for (const receipt of otherReceipts(message)) {
+    if (!(receipt.readTimestamp || receipt.playedTimestamp)) continue
+    const jids = receiptJids(receipt)
+    const identity = readerIdentity(jids, nameIndex)
+    if (!identity || seen.has(identity)) continue
+    seen.add(identity)
+    const name = jids.map(jid => displayNameForJid(jid, nameIndex)).find(Boolean) || ''
+    if (name) names.push(name)
+  }
+  return names
+}
+
+/**
+ * Tooltip for the status tick: who read a group message, or when a direct
+ * message reached its state.
+ */
+export function messageStatusTitle(message, isGroupMessage, nameIndex) {
+  if (!message?.fromMe) return ''
+  if (!isGroupMessage) return formatStatusTime(messageStatusTimestamp(message))
+  const names = messageReadBy(message, nameIndex)
+  if (!names.length) return ''
+  // Big groups would produce an unusably long tooltip.
+  const shown = names.slice(0, READ_LIST_LIMIT)
+  const rest = names.length - shown.length
+  return `נקרא על ידי: ${shown.join(', ')}${rest ? ` ועוד ${rest}` : ''}`
+}
+
+const READ_LIST_LIMIT = 6
 
 /**
  * Whether the message status icon should be shown.

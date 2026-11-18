@@ -52,6 +52,13 @@ export function mergeMessagePatch(message: UiMessage, patch: Partial<UiMessage>)
   if ('status' in patch && messageStatusRank(message.status) > messageStatusRank(patch.status)) {
     next.status = message.status
   }
+  // Status only moves forward, so its moment must too: an update that does not
+  // advance the state (or a duplicate) must not rewind the tooltip.
+  if (patch.statusTimestamp) {
+    const keepsStatus = messageStatusRank(patch.status) < messageStatusRank(message.status)
+    const updateAt = Number(patch.statusTimestamp)
+    next.statusTimestamp = keepsStatus ? message.statusTimestamp : Math.max(Number(message.statusTimestamp || 0), updateAt)
+  }
   // Preserve existing contact data — don't let an echo with empty displayName wipe it out
   if (patch.contact && message.contact) {
     const p = patch.contact as Record<string, unknown>

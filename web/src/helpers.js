@@ -3,6 +3,15 @@ export function formatTime(value) {
   return new Intl.DateTimeFormat('he-IL', { hour: '2-digit', minute: '2-digit' }).format(new Date(value))
 }
 
+// Compact timestamp for hover titles: the time for today, the date before that.
+export function formatStatusTime(value, now = new Date()) {
+  if (!value) return ''
+  const date = new Date(Number(value))
+  if (Number.isNaN(date.getTime())) return ''
+  const sameDay = date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate()
+  return sameDay ? formatTime(date) : new Intl.DateTimeFormat('he-IL', { dateStyle: 'short' }).format(date)
+}
+
 export function formatDateFull(value) {
   if (!value) return ''
   return new Intl.DateTimeFormat('he-IL', { dateStyle: 'full', timeStyle: 'short' }).format(new Date(value))

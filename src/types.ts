@@ -145,6 +145,12 @@ export type UiMessage = {
   key: WAMessageKey
   raw?: WAMessage
   status?: number | string
+  /**
+   * When `status` last moved forward, in ms. 1:1 chats get status updates as
+   * `messages.update` entries carrying only a `messageTimestamp` (no receipt
+   * object), so the moment has to be captured separately from the receipts.
+   */
+  statusTimestamp?: number
   receipt?: proto.IUserReceipt
   userReceipt?: proto.IUserReceipt[]
   edited?: boolean
@@ -214,6 +220,7 @@ export type MessagePatch = Partial<{
   key: WAMessageKey
   raw?: WAMessage
   status: number | string
+  statusTimestamp: number
   receipt: proto.IUserReceipt
   userReceipt: proto.IUserReceipt[]
   edited: boolean

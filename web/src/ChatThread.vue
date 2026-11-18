@@ -90,7 +90,8 @@ const props = defineProps({
   replyTo: { type: Object, default: null },
   selectedBot: { type: String, default: '' },
   draggingFile: { type: Boolean, default: false },
-  emojis: { type: Array, default: () => [] }
+  emojis: { type: Array, default: () => [] },
+  jidNames: { type: Map, default: () => new Map() }
 })
 
 const emit = defineEmits([
@@ -586,6 +587,7 @@ defineExpose({ scrollToBottom, scrollToMessage, forceScrollToBottom })
       :media-loading="Boolean(loadingMedia[message.id])"
       :loaded-url="loadedMediaUrl(message) || ''"
       :participant-count="Number(currentChat?.jid === message.jid ? currentChat?.participantCount : 0)"
+      :jid-names="jidNames"
       :sent-buttons="sentButtons"
       :transcribing="isTranscribing(message)"
       :actions="bubbleActions"

@@ -10,7 +10,7 @@ import {
   formatTime, formatDateFull, formatDateCaption, formatLastSeen, initials, avatarUrl, setAvatarCache, getAvatarCache
 } from './helpers.js'
 import {
-  hasLinkCandidate, linkPreviewHref, linkPreviewHost, linkPreviewImageStyle, messagePreview
+  hasLinkCandidate, linkPreviewHref, linkPreviewHost, linkPreviewImageStyle, messagePreview, buildJidNameIndex
 } from './message-renderer.js'
 import { messageStatusRank, mergeMessagePatch, reactionUserKey, isMessageEditable } from '../../src/message-utils.ts'
 import { buildContactVcard, looksLikeLidNumber } from '../../src/contact-vcard.ts'
@@ -57,6 +57,10 @@ const fileInputRef = ref(null)
 const uploadModalRef = ref(null)
 const draggingFile = ref(false)
 const chatDropJid = ref('')
+// Chat that staged files will be sent to when it is NOT the open chat (a
+// message or media file dragged from the thread onto a chat in the sidebar).
+// Sharing must not navigate away from the conversation being read.
+const shareTargetJid = ref('')
 const showUploadModal = ref(false)
 const showForwardPopup = ref(false)
 const showContactPicker = ref(false)
@@ -145,11 +149,20 @@ const contactsById = computed(() => {
   }
   return index
 })
+// JID → display name index for message-status tooltips (who read a group message).
+const jidNames = computed(() => buildJidNameIndex([...contacts.value, ...groupParticipants.value]))
 const currentChat = computed(() => chatsById.value.get(selectedChat.value))
 // Announcement group the linked account cannot post to (only admins may send).
 const isReadOnly = computed(() => Boolean(currentChat.value?.readOnly))
 const chatTitle = computed(() => currentChat.value?.name || selectedChat.value || 'בחרו שיחה')
 const chatSubtitle = computed(() => ""/* currentChat.value ? chatAddress(currentChat.value) : selectedChat.value*/)
+// Display name of any chat by JID (drop targets, share destinations).
+function chatLabel(jid) {
+  const chat = chatsById.value.get(jid)
+  if (chat?.name) return chat.name
+  return jid.replace(/@.*$/, '')
+}
+const shareTargetLabel = computed(() => shareTargetJid.value ? chatLabel(shareTargetJid.value) : '')
 const emojis = computed(() => [...new Set([...usedEmojis.value, ...defaultEmojis])].slice(0, 48))
 const emojiSearch = ref('')
 const emojiResults = computed(() => searchEmojiCatalog(emojiSearch.value))
@@ -1207,7 +1220,7 @@ function makeVcard(contact) {
 }
 
 async function forwardMessage(sourceJid, sourceId, targetJid) {
-  if (!sourceJid || !sourceId || !targetJid) return
+  if (!sourceJid || !sourceId || !targetJid) return false
   actionMessageId.value = ''
   showForwardPopup.value = false
   error.value = ''
@@ -1217,12 +1230,16 @@ async function forwardMessage(sourceJid, sourceId, targetJid) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bot: selectedBot.value, sourceJid, sourceId, targetJid })
     })
+    // Only the open chat shows the forwarded bubble; forwarding to another chat
+    // must not pull the user out of the conversation they are reading.
     if (data.message && selectedChat.value === targetJid) {
       upsertMessage(data.message)
       scrollToBottom(data.message)
     }
+    return true
   } catch (err) {
     error.value = err.message
+    return false
   }
 }
 
@@ -1597,8 +1614,10 @@ async function cancelScheduled(item) {
 
 // Called by the UploadModal when the user confirms sending the staged files.
 async function onFilesSend({ files, caption: captionText, forwarded }) {
-  if (busy.value || !selectedChat.value || !files?.length) return
-  const jid = activeSendJid()
+  // Files dropped on another chat are sent there while the open chat stays put.
+  const shareTarget = shareTargetJid.value
+  const jid = shareTarget || activeSendJid()
+  if (busy.value || !jid || !files?.length) return
   const bot = selectedBot.value
   busy.value = true
   error.value = ''
@@ -1608,8 +1627,9 @@ async function onFilesSend({ files, caption: captionText, forwarded }) {
   showUploadModal.value = false
   uploadingFile.value = { name: files[0].name || 'קובץ', index: 1, total: files.length }
   if (files[0].type?.startsWith('image/')) setUploadingPreviewBlob(files[0])
-  // The composer text was consumed as the caption of the first file
-  text.value = ''
+  // The composer text was consumed as the caption of the first file — only when
+  // the files actually go to the open chat.
+  if (!shareTarget) text.value = ''
   const remaining = [...files]
   try {
     while (remaining.length) {
@@ -1632,11 +1652,17 @@ async function onFilesSend({ files, caption: captionText, forwarded }) {
         if (remaining[0].type?.startsWith('image/')) setUploadingPreviewBlob(remaining[0])
       }
     }
-    Toast.success(files.length > 1 ? `${files.length} קבצים נשלחו` : 'הקובץ נשלח')
+    const label = shareTarget ? ` אל ${chatLabel(jid)}` : ''
+    Toast.success(files.length > 1 ? `${files.length} קבצים נשלחו${label}` : `הקובץ נשלח${label}`)
+    shareTargetJid.value = ''
   } catch (err) {
     error.value = err.message
     // Send failed — restore the modal with the files that were not sent yet
+    // (and the same destination, so a retry does not land in a different chat)
     if (remaining.length) {
+      // Keep a share destination pointing at the same chat even if the user
+      // navigated away while the upload was running.
+      if (activeSendJid() !== jid) shareTargetJid.value = jid
       uploadModalRef.value?.openFiles(remaining, forwarded, remaining.length === files.length ? captionText : '')
       showUploadModal.value = true
     }
@@ -1707,8 +1733,9 @@ async function onChatDrop(event, jid) {
     if (forwardRaw) {
       const source = JSON.parse(forwardRaw)
       if (source?.bot && source?.jid && source?.id) {
-        await selectChat(jid)
-        await forwardMessage(source.jid, source.id, jid)
+        // Forward in place: dropping a message on another chat must not take the
+        // user away from the conversation they were reading.
+        if (await forwardMessage(source.jid, source.id, jid)) Toast.success(`ההודעה הועברה אל ${chatLabel(jid)}`)
         return
       }
     }
@@ -1732,8 +1759,7 @@ async function onChatDrop(event, jid) {
       })
     }
 
-    await selectChat(jid)
-    openUploadModal(file, forwarded)
+    openUploadModal(file, forwarded, jid)
   } catch (err) {
     error.value = err.message
   }
@@ -1753,16 +1779,19 @@ function openUploadPicker() {
 }
 
 // Accepts a single File or an array of Files
-function openUploadModal(file, forwarded = false) {
-  if (!selectedChat.value) return
+function openUploadModal(file, forwarded = false, targetJid = '') {
+  if (!selectedChat.value && !targetJid) return
+  // Sending to another chat keeps the current one open (and its draft untouched).
+  shareTargetJid.value = targetJid && targetJid !== selectedChat.value ? targetJid : ''
   const files = Array.isArray(file) ? file : (file ? [file] : [])
   // Pre-fill the caption with the current text from the composer input
-  uploadModalRef.value?.openFiles(files, forwarded, text.value)
+  uploadModalRef.value?.openFiles(files, forwarded, shareTargetJid.value ? '' : text.value)
   showUploadModal.value = true
 }
 
 function closeUploadModal() {
   showUploadModal.value = false
+  shareTargetJid.value = ''
 }
 
 function onKeydown(event) {
@@ -2122,6 +2151,7 @@ onUnmounted(() => {
         :reaction-message-id="reactionMessageId"
         :selected-bot="selectedBot"
         :dragging-file="draggingFile"
+        :jid-names="jidNames"
         ref="threadRef"
         :emojis="emojis"
         @toggle-message-menu="toggleMessageMenu"
@@ -2184,7 +2214,7 @@ onUnmounted(() => {
           <span v-else class="uploading-icon" aria-hidden="true">📎</span>
           <div class="uploading-copy">
             <strong>{{ uploadingFile.name }}</strong>
-            <small><span class="spinner" aria-hidden="true"></span> שולח קובץ…<span v-if="uploadingFile.total > 1"> ({{ uploadingFile.index }}/{{ uploadingFile.total }})</span></small>
+            <small><span class="spinner" aria-hidden="true"></span> שולח קובץ<span v-if="shareTargetLabel"> אל {{ shareTargetLabel }}</span>…<span v-if="uploadingFile.total > 1"> ({{ uploadingFile.index }}/{{ uploadingFile.total }})</span></small>
           </div>
         </div>
         <div v-if="replyTo" class="reply-strip">
@@ -2324,7 +2354,8 @@ onUnmounted(() => {
     ref="uploadModalRef"
     :open="showUploadModal"
     :busy="busy"
-    :chat-selected="Boolean(selectedChat)"
+    :chat-selected="Boolean(selectedChat || shareTargetJid)"
+    :target-name="shareTargetLabel"
     @close="closeUploadModal"
     @send="onFilesSend"
   />

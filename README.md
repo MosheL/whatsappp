@@ -108,6 +108,25 @@ In the UI, the bubble menu's **מחק** deletes for everyone (revoke + local tom
 - **Shift+click** the **מחק** button, or press **Shift+Delete** on the hovered message / the one whose action menu is open.
 - For a message that is already a tombstone, the button becomes **הסר** and a plain click removes the placeholder locally (a remote revoke would be meaningless).
 
+#### Sharing a message by drag
+Dragging a message bubble (or its media) from the thread onto a chat in the sidebar sends it to that chat. The drop is a **share in place**: the sidebar chat is highlighted as the drop target, but the open conversation is never switched and no navigation happens on drop — the user keeps reading the chat they started from.
+
+- **Text / media message** → `POST /api/forward-message` with the dragged message's `jid`/`id` and the dropped chat as `targetJid`, followed by a `ההודעה הועברה אל <name>` toast. The forwarded bubble is only appended to the thread when the target *is* the open chat.
+- **Media file** → the blob is fetched into a `File` and staged in the upload modal with `shareTargetJid` set, so the modal shows the destination (`נשלח אל: <name>`) and `POST /api/send-file` goes to that chat. The composer draft and text of the open chat are left untouched (the caption starts empty, and `text` is only cleared when the files go to the open chat), and the in-composer upload strip names the destination. The target is cleared on close, on success, and kept on failure so a retry cannot land in a different chat.
+- **OS files** dropped on a chat follow the same staging path — the modal always shows where the files will go.
+
+#### Status tick tooltip
+The ticks next to an outgoing message's time (`StatusTick.vue`) carry a hover `title` built by `message-renderer.js → messageStatusTitle()`:
+
+- **1:1 chat** — the moment the message reached its current state: the read time (`readTimestamp`/`playedTimestamp`), else the delivery time (`receiptTimestamp`/`deliveryTimestamp`), else `statusTimestamp`, else the send time. Shown as `HH:MM` when it happened today and as a short date (`DD.MM.YY`) before that (`helpers.js → formatStatusTime()`).
+- **Group chat** — `נקרא על ידי: <names>`, the participants whose receipts carry a read/played timestamp (own devices excluded, one entry per participant, capped at 6 with `ועוד N`). Receipt protobufs only carry JIDs, so names are resolved through a JID → name index built in `App.vue` from the address book (`/api/contacts`) plus the open group's participants (`/api/group-participants`); unmapped entries fall back to `+<phone>` and unmapped `@lid` ids are omitted.
+
+Direct (1:1) chats never get receipt objects — Baileys only emits `message-receipt.update` for groups. Their delivery/read updates arrive as `messages.update` entries `{ status, messageTimestamp }`, so `chat-store.ts → normalizeMessagePatch()` captures that moment on the message as `statusTimestamp` (ms, folded from `messageTimestamp`) and drops the raw field; `mergeMessagePatch()` refuses to rewind it when a stale update arrives after a further state, and the tooltip prefers it over the send time. `normalizeTimestamp()` handles epoch seconds, epoch milliseconds and `Long`-like objects.
+
+Receipt timestamps are epoch seconds on the wire and normalized to milliseconds (`receiptTime()`), which also accepts already-millisecond values.
+
+Readers are deduplicated by participant identity, never by display name: a receipt with a phone JID keys on the phone digits, a LID-only receipt keys on the LID and maps through the index's `LID_PHONE_MAP` (built from group participants that carry both `jid` and `phoneNumber`), so two different people who share a name both appear and the `ועוד N` count stays correct. Unnamed participants (the server's `Unknown participant` placeholder) are not treated as a name: the placeholder is skipped when building/resolving the index and such readers fall back to `+<phone>`.
+
 #### Interactive messages
 WhatsApp Cloud API / native-flow interactive messages (templates, buttons, lists, and `interactiveMessage`) are parsed by `message-processor.ts → messageInteractiveData()` into an `InteractiveData` block on the `UiMessage`, and rendered by `ChatThread.vue` with clickable buttons. Native-flow buttons carry their payload as a `buttonParamsJson` JSON string; the parser decodes it per button type:
 

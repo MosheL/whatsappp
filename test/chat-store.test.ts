@@ -421,3 +421,24 @@ test('album placeholder messages bump the chat with an album label', () => {
   })
   assert.equal(chats.get(jid)?.lastMessage, 'אלבום (2 תמונות)')
 })
+
+test('captures the moment of a 1:1 status update as statusTimestamp', () => {
+  const store = makeStore(new Map())
+
+  // Direct chats receive { status, messageTimestamp } (epoch seconds) with no
+  // receipt object — Baileys only emits message-receipt.update for groups.
+  const read = store.normalizeMessagePatch({ status: 4, messageTimestamp: 1_700_000_000 } as any)
+  assert.equal(read.status, 4)
+  assert.equal(read.statusTimestamp, 1_700_000_000_000)
+  assert.equal('messageTimestamp' in read, false)
+
+  // Already-millisecond values and Long-like objects pass through unchanged.
+  assert.equal(store.normalizeMessagePatch({ status: 4, messageTimestamp: 1_700_000_000_000 } as any).statusTimestamp, 1_700_000_000_000)
+  assert.equal(store.normalizeMessagePatch({ status: 4, messageTimestamp: { low: 1_700_000_000, high: 0 } } as any).statusTimestamp, 1_700_000_000_000)
+
+  // Patches that carry no status moment (edits, deletes, receipts) stay as-is.
+  const edited = store.normalizeMessagePatch({ edited: true } as any)
+  assert.equal(edited.statusTimestamp, undefined)
+  assert.equal(store.normalizeMessagePatch({ status: 4 } as any).statusTimestamp, undefined)
+  assert.equal('messageTimestamp' in store.normalizeMessagePatch({ edited: true } as any), false)
+})

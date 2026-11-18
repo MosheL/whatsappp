@@ -24,6 +24,8 @@ const props = defineProps({
   mediaLoading: Boolean,
   loadedUrl: { type: String, default: '' },
   participantCount: { type: Number, default: 0 },
+  // JID → display name index (contacts + group participants) for status tooltips.
+  jidNames: { type: Map, default: () => new Map() },
   sentButtons: { type: Set, required: true },
   transcribing: Boolean,
   actions: { type: Object, required: true }
@@ -413,6 +415,7 @@ const reactionGroups = computed(() => groupedReactions(props.message))
             :message="message"
             :is-group="message.jid?.endsWith('@g.us')"
             :participant-count="participantCount"
+            :name-index="jidNames"
           />
         </span>
       </article>

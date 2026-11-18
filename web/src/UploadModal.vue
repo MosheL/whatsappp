@@ -8,7 +8,10 @@ import { nextTick, onUnmounted, ref, watch } from 'vue'
 const props = defineProps({
   open: Boolean,
   busy: Boolean,
-  chatSelected: Boolean
+  chatSelected: Boolean,
+  // Set when the staged files are going to a chat other than the open one (files
+  // dropped on a chat in the sidebar): shown so the destination is never a guess.
+  targetName: { type: String, default: '' }
 })
 const emit = defineEmits(['close', 'send'])
 
@@ -142,6 +145,7 @@ onUnmounted(clearFiles)
             <strong>שליחת קובץ</strong>
             <button type="button" class="modal-close" title="סגור" aria-label="סגור" @click="emit('close')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z" fill="currentColor"/></svg></button>
           </header>
+          <p v-if="targetName" class="upload-target" dir="auto">נשלח אל: <strong>{{ targetName }}</strong></p>
           <form class="modal-body upload-form" @submit.prevent="send">
             <div
               class="upload-dropzone"

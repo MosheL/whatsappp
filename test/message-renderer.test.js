@@ -17,8 +17,14 @@ import {
   messageDeliveryState,
   messageReactions,
   groupedReactions,
-  messagePreview
+  messagePreview,
+  buildJidNameIndex,
+  displayNameForJid,
+  messageStatusTimestamp,
+  messageReadBy,
+  messageStatusTitle
 } from '../web/src/message-renderer.js'
+import { formatStatusTime } from '../web/src/helpers.js'
 
 test('renders forwarded metadata from the public message flag', () => {
   assert.equal(isForwardedMessage({ forwarded: true }), true)
@@ -330,6 +336,124 @@ test('monospace fences render literal code without nested markup', () => {
   // Unbalanced/in-line fence stays literal text.
   assert.equal(formatMessageText('a ```b').some(token => token.type === 'mono'), false)
   assert.equal(formatMessageText('``` ```').some(token => token.type === 'mono'), false)
+})
+
+test('normalizes receipt timestamps from seconds to milliseconds', () => {
+  const message = { receipt: { userJid: 'two', receiptTimestamp: 1_700_000_000 } }
+  assert.equal(messageStatusTimestamp(message), 1_700_000_000_000)
+})
+
+test('status timestamp prefers reads over delivery over the send time', () => {
+  const sent = { timestamp: 1_700_000_000 }
+  assert.equal(messageStatusTimestamp(sent), 1_700_000_000_000)
+  assert.equal(messageStatusTimestamp({ ...sent, receipt: { receiptTimestamp: 1_700_000_010 } }), 1_700_000_010_000)
+  assert.equal(messageStatusTimestamp({
+    ...sent,
+    receipt: { readTimestamp: 1_700_000_020 },
+    userReceipt: [{ readTimestamp: 1_700_000_030 }]
+  }), 1_700_000_030_000)
+})
+
+test('direct-chat status titles use the captured status update time', () => {
+  // 1:1 updates arrive as { status, messageTimestamp } — no receipt objects.
+  const now = Date.now()
+  const message = { fromMe: true, timestamp: now - 5 * 60_000, status: 'read', statusTimestamp: now - 60_000 }
+  assert.equal(messageStatusTimestamp(message), now - 60_000)
+  assert.equal(messageStatusTitle(message, false, new Map()), formatStatusTime(now - 60_000))
+  assert.notEqual(messageStatusTitle(message, false, new Map()), formatStatusTime(message.timestamp))
+  // Receipt details win over the coarse status moment when present.
+  assert.equal(messageStatusTimestamp({
+    ...message,
+    userReceipt: [{ userJid: 'two', readTimestamp: 1_700_000_900 }]
+  }), 1_700_000_900_000)
+})
+
+test('builds a JID name index from contacts and group participants', () => {
+  const contact = { jid: '972501234567@s.whatsapp.net', name: 'moshe cohen' }
+  const index = buildJidNameIndex([contact, { jid: '972501234567@s.whatsapp.net', name: '972501234567' }, { jid: '972509999999@lid', name: 'דנה' }])
+  assert.equal(displayNameForJid('972501234567@s.whatsapp.net', index), 'moshe cohen')
+  assert.equal(displayNameForJid('972501234567@c.us', index), 'moshe cohen')
+  assert.equal(displayNameForJid('972509999999@lid', index), 'דנה')
+  assert.equal(displayNameForJid('972508888888@s.whatsapp.net', index), '+972508888888')
+  // An unmapped LID must not be shown as a meaningless number.
+  assert.equal(displayNameForJid('1234567890@lid', index), '')
+})
+
+test('lists group readers once, in receipt order', () => {
+  const index = buildJidNameIndex([
+    { jid: '972501111111@lid', name: 'דנה' },
+    { jid: '972502222222@s.whatsapp.net', name: 'משה' }
+  ])
+  const message = {
+    fromMe: true,
+    userReceipt: [
+      { userJid: '972502222222@s.whatsapp.net', readTimestamp: 1_700_000_000 },
+      { userJid: '972501111111@lid', readTimestamp: 1_700_000_001, participantPn: '972501111111@s.whatsapp.net' },
+      { userJid: '972503333333@s.whatsapp.net', receiptTimestamp: 1_700_000_002 }
+    ]
+  }
+  assert.deepEqual(messageReadBy(message, index), ['משה', 'דנה'])
+  assert.equal(messageStatusTitle(message, true, index), 'נקרא על ידי: משה, דנה')
+  // Direct chats get the time/date of the status instead of a name list.
+  assert.doesNotMatch(messageStatusTitle(message, false, index), /משה/)
+  assert.equal(messageStatusTitle({ ...message, fromMe: false }, true, index), '')
+  assert.equal(messageStatusTitle({ ...message, userReceipt: [] }, true, index), '')
+})
+
+test('caps a long group reader list in the tooltip', () => {
+  const userReceipt = Array.from({ length: 8 }, (_, i) => ({
+    userJid: `97250000${i}@s.whatsapp.net`,
+    readTimestamp: 1_700_000_000 + i
+  }))
+  const title = messageStatusTitle({ fromMe: true, userReceipt }, true, new Map())
+  assert.match(title, /^נקרא על ידי: /)
+  assert.match(title, /ועוד 2$/)
+})
+
+test('keeps readers with the same display name as separate entries', () => {
+  const index = buildJidNameIndex([
+    { jid: '972501111111@s.whatsapp.net', name: 'דנה כהן' },
+    { jid: '972501111112@s.whatsapp.net', name: 'דנה כהן' }
+  ])
+  const message = {
+    fromMe: true,
+    userReceipt: [
+      { userJid: '972501111111@s.whatsapp.net', readTimestamp: 1 },
+      { userJid: '972501111112@s.whatsapp.net', readTimestamp: 2 }
+    ]
+  }
+  assert.deepEqual(messageReadBy(message, index), ['דנה כהן', 'דנה כהן'])
+  assert.deepEqual(messageReadBy({ fromMe: true, userReceipt: [message.userReceipt[0]] }, index), ['דנה כהן'])
+})
+
+test('collapses a LID reader and its phone receipt into one participant', () => {
+  const index = buildJidNameIndex([{ jid: '12345678901234@lid', name: 'דנה', phoneNumber: '972501111111' }])
+  const message = {
+    fromMe: true,
+    userReceipt: [
+      { userJid: '12345678901234@lid', readTimestamp: 1 },
+      { userJid: '12345678901234@lid', readTimestamp: 2, participantPn: '972501111111@s.whatsapp.net' }
+    ]
+  }
+  assert.deepEqual(messageReadBy(message, index), ['דנה'])
+})
+
+test('names unnamed readers by phone instead of the unknown placeholder', () => {
+  const index = buildJidNameIndex([
+    { jid: '972501111111@lid', name: 'Unknown participant', phoneNumber: '972501111111' },
+    { jid: '972502222222@lid', name: 'Unknown participant', phoneNumber: '972502222222' }
+  ])
+  assert.equal(displayNameForJid('972501111111@lid', index), '+972501111111')
+  const message = {
+    fromMe: true,
+    userReceipt: [
+      { userJid: '972501111111@lid', readTimestamp: 1 },
+      { userJid: '972502222222@lid', readTimestamp: 2 }
+    ]
+  }
+  assert.deepEqual(messageReadBy(message, index), ['+972501111111', '+972502222222'])
+  assert.match(messageStatusTitle(message, true, index), /\+972501111111, \+972502222222/)
+  assert.doesNotMatch(messageStatusTitle(message, true, index), /Unknown/i)
 })
 
 test('canTranscribe covers voice notes, audio and video only', () => {

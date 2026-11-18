@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mergeMessagePatch, isMessageEditable, MESSAGE_EDIT_WINDOW_MS } from '../src/message-utils.ts'
+import { mergeMessagePatch, isMessageEditable, messageStatusRank, MESSAGE_EDIT_WINDOW_MS } from '../src/message-utils.ts'
 
 test('isMessageEditable only allows recent outgoing text messages', () => {
   const now = 1_700_000_000_000
@@ -45,4 +45,26 @@ test('an empty-text reaction patch removes the reaction (un-react)', () => {
 
   assert.equal(removed.reactions.length, 1)
   assert.equal(removed.reactions[0].userJid, 'other')
+})
+
+test('keeps the status moment of the furthest state when updates reorder', () => {
+  const existing: any = { id: 'message', status: 3, statusTimestamp: 1_700_000_100_000 }
+
+  // A later status advances the moment.
+  const read = mergeMessagePatch(existing, { status: 4, statusTimestamp: 1_700_000_200_000 })
+  assert.equal(read.status, 4)
+  assert.equal(read.statusTimestamp, 1_700_000_200_000)
+
+  // A stale delivery update must not rewind the (already read) moment.
+  const stale = mergeMessagePatch(read, { status: 3, statusTimestamp: 1_700_000_050_000 })
+  assert.equal(stale.status, 4)
+  assert.equal(stale.statusTimestamp, 1_700_000_200_000)
+
+  // Duplicate updates keep the newest moment.
+  const duplicate = mergeMessagePatch(read, { status: 'read', statusTimestamp: 1_700_000_150_000 })
+  assert.equal(duplicate.statusTimestamp, 1_700_000_200_000)
+  assert.equal(messageStatusRank(duplicate.status), 4)
+
+  // Patches without a moment leave the stored one alone.
+  assert.equal(mergeMessagePatch(read, { edited: true }).statusTimestamp, 1_700_000_200_000)
 })

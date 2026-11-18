@@ -3,7 +3,7 @@ import type { proto } from '@whiskeysockets/baileys'
 import { isJidGroup } from '@whiskeysockets/baileys'
 import type { Chat } from '@whiskeysockets/baileys/lib/Types/Chat.js'
 import { shouldIgnoreUiJid, looksLikeJid } from './contact-cache.ts'
-import { callTypeLabel, interactivePreviewLabel, isSupportedMessageType, albumPreviewLabel } from './message-processor.ts'
+import { callTypeLabel, interactivePreviewLabel, isSupportedMessageType, albumPreviewLabel, normalizeTimestamp } from './message-processor.ts'
 import { messageStatusRank, mergeMessagePatch, reactionUserKey } from './message-utils.ts'
 
 export class ChatStore {
@@ -68,6 +68,14 @@ export class ChatStore {
   normalizeMessagePatch(patch: MessagePatch): MessagePatch {
     const { isOwnReceipt } = this.deps
     const next = { ...patch }
+    // 1:1 delivery/read updates arrive as { status, messageTimestamp } with no
+    // receipt object (Baileys only emits message-receipt.update for groups), so
+    // keep the moment as statusTimestamp for the tick tooltip.
+    const statusTimestamp = (next as any).messageTimestamp != null && next.status != null
+      ? normalizeTimestamp((next as any).messageTimestamp)
+      : 0
+    delete (next as any).messageTimestamp
+    if (statusTimestamp) next.statusTimestamp = statusTimestamp
     const receipt = next.receipt
     if (receipt) {
       next.receipt = { ...receipt, own: isOwnReceipt(receipt) }

@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { messageDeliveryState, isDoubleTick } from './message-renderer.js'
+import { messageDeliveryState, isDoubleTick, messageStatusTitle } from './message-renderer.js'
 
 /**
  * Props:
@@ -8,6 +8,7 @@ import { messageDeliveryState, isDoubleTick } from './message-renderer.js'
  * - isGroup: boolean
  * - participantCount: number
  * - statusLabel: optional override string (e.g. from chat preview)
+ * - nameIndex: Map of JID → display name, used to list who read a group message
  *
  * If statusLabel is provided, it is used directly instead of computing it.
  */
@@ -15,7 +16,8 @@ const props = defineProps({
   message: { type: Object, default: null },
   isGroup: { type: Boolean, default: false },
   participantCount: { type: Number, default: 0 },
-  statusLabel: { type: String, default: '' }
+  statusLabel: { type: String, default: '' },
+  nameIndex: { type: Map, default: () => new Map() }
 })
 
 const status = computed(() => {
@@ -28,6 +30,11 @@ const showStatus = computed(() => {
   return Boolean(status.value)
 })
 
+const title = computed(() => {
+  if (props.statusLabel || !props.message) return ''
+  return messageStatusTitle(props.message, props.isGroup, props.nameIndex)
+})
+
 const isDouble = computed(() => {
   if (props.statusLabel) return props.statusLabel !== 'sent'
   if (!props.message) return false
@@ -36,7 +43,7 @@ const isDouble = computed(() => {
 </script>
 
 <template>
-  <span v-if="showStatus" :class="['message-status', status]" class="chat-status-tick">
+  <span v-if="showStatus" :class="['message-status', status]" class="chat-status-tick" :title="title || null">
     <svg
       :class="['tick-icon', { double: isDouble }]"
       viewBox="0 0 18 11"
